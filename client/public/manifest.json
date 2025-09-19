@@ -1,0 +1,63 @@
+{
+  "short_name": "Kiro-mini",
+  "name": "Kiro-mini Medical Imaging System",
+  "description": "Professional medical imaging and radiology workflow system with offline capabilities",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "icon-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable any"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "landscape-primary",
+  "theme_color": "#1976d2",
+  "background_color": "#ffffff",
+  "categories": ["medical", "productivity", "utilities"],
+  "lang": "en-US",
+  "scope": "/",
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "View Studies",
+      "short_name": "Studies",
+      "description": "View patient studies",
+      "url": "/studies",
+      "icons": [{ "src": "favicon.ico", "sizes": "32x32" }]
+    },
+    {
+      "name": "Create Report",
+      "short_name": "Report",
+      "description": "Create new report",
+      "url": "/reports/new",
+      "icons": [{ "src": "favicon.ico", "sizes": "32x32" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-wide.png",
+      "type": "image/png",
+      "sizes": "1280x720",
+      "form_factor": "wide"
+    },
+    {
+      "src": "screenshot-narrow.png",
+      "type": "image/png",
+      "sizes": "750x1334",
+      "form_factor": "narrow"
+    }
+  ]
+}
