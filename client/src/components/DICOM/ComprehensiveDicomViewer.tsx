@@ -6,7 +6,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Tabs, Tab, Slider, FormControl, InputLabel, Select, MenuItem,
   Switch, FormControlLabel, ButtonGroup, Divider, Stack,
-  useMediaQuery, useTheme, Drawer, Fab
+  useMediaQuery, useTheme, Drawer, Fab, Snackbar
 } from '@mui/material';
 import {
   ZoomIn, ZoomOut, RotateLeft, RotateRight, Brightness6,
@@ -15,7 +15,8 @@ import {
   ThreeDRotation, ViewInAr, ViewModule, Straighten,
   RadioButtonUnchecked, CropFree, Timeline, Delete,
   Clear, Settings, Visibility, VisibilityOff,
-  Menu, Close, AutoAwesome, Psychology, Assessment
+  Menu, Close, AutoAwesome, Psychology, Assessment,
+  Memory, Computer, NetworkCheck, Error as ErrorIcon
 } from '@mui/icons-material';
 import type { Study } from '../../types';
 
@@ -25,9 +26,30 @@ import MeasurementTools, { Measurement } from './MeasurementTools';
 import AnnotationTools from './AnnotationTools';
 import WindowingPresets from './WindowingPresets';
 
+// Import enhanced services and hooks
+import { useViewerManager } from '../../hooks/useViewerManager';
+import { ErrorHandler } from '../../services/errorHandler';
+import { performanceMonitor, PerformanceMonitor } from '../../services/performanceMonitor';
+import { AIEnhancementModule } from '../../services/aiEnhancementModule';
+import { CollaborationModule } from '../../services/collaborationModule';
+import { MeasurementTools as MeasurementService } from '../../services/measurementTools';
+import { AnnotationSystem } from '../../services/annotationSystem';
+
 interface ComprehensiveDicomViewerProps {
   study: Study;
   onError?: (error: string) => void;
+  initialState?: {
+    zoom?: number;
+    rotation?: number;
+    brightness?: number;
+    contrast?: number;
+    pan?: { x: number; y: number };
+    currentSlice?: number;
+  };
+  enableAI?: boolean;
+  enableCollaboration?: boolean;
+  enableAdvancedMeasurements?: boolean;
+  enableComprehensiveAnnotations?: boolean;
 }
 
 interface ViewerState {
@@ -65,38 +87,150 @@ interface ViewerState {
   fullscreen: boolean;
 }
 
-const ComprehensiveDicomViewer: React.FC<ComprehensiveDicomViewerProps> = ({ study, onError }) => {
+const ComprehensiveDicomViewer: React.FC<ComprehensiveDicomViewerProps> = ({ 
+  study, 
+  onError,
+  initialState,
+  enableAI = true,
+  enableCollaboration = true,
+  enableAdvancedMeasurements = true,
+  enableComprehensiveAnnotations = true
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const currentImageRef = useRef<HTMLImageElement | null>(null);
   
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  // Enhanced services
+  const errorHandlerRef = useRef<ErrorHandler | null>(null);
+  const performanceMonitorRef = useRef<PerformanceMonitor | null>(null);
+  const aiModuleRef = useRef<AIEnhancementModule | null>(null);
+  const collaborationModuleRef = useRef<CollaborationModule | null>(null);
+  const measurementServiceRef = useRef<MeasurementService | null>(null);
+  const annotationServiceRef = useRef<AnnotationSystem | null>(null);
+
+  // Viewer Manager integration
+  const {
+    manager,
+    currentMode,
+    currentState,
+    updateState,
+    getSystemHealth
+  } = useViewerManager({
+    config: {
+      enableStatePreservation: true,
+      enablePerformanceMonitoring: true,
+      enableAutoOptimization: true
+    }
+  });
   
-  // Comprehensive state management
+  // Comprehensive state management with initial state support
   const [state, setState] = useState<ViewerState>({
     loading: true,
     error: null,
     imageLoaded: false,
-    zoom: 1,
-    rotation: 0,
-    brightness: 100,
-    contrast: 100,
-    pan: { x: 0, y: 0 },
+    zoom: initialState?.zoom || 1,
+    rotation: initialState?.rotation || 0,
+    brightness: initialState?.brightness || 100,
+    contrast: initialState?.contrast || 100,
+    pan: initialState?.pan || { x: 0, y: 0 },
     loadedImages: [],
-    currentSlice: 0,
+    currentSlice: initialState?.currentSlice || 0,
     totalSlices: 1,
     isPlaying: false,
     playSpeed: 2,
     viewerMode: 'smart',
     showMetadata: false,
-    showMeasurements: false,
-    showAnnotations: false,
+    showMeasurements: enableAdvancedMeasurements,
+    showAnnotations: enableComprehensiveAnnotations,
     activeTool: null,
     measurements: [],
     sidebarOpen: !isMobile,
     fullscreen: false
   });
+
+  // Enhanced features state
+  const [aiEnhancements, setAiEnhancements] = useState<any[]>([]);
+  const [collaborationSession, setCollaborationSession] = useState<any>(null);
+  const [performanceMetrics, setPerformanceMetrics] = useState<any>(null);
+  const [systemHealth, setSystemHealth] = useState<any>(null);
+  const [showEnhancedFeatures, setShowEnhancedFeatures] = useState(false);
+
+  // Initialize enhanced services
+  useEffect(() => {
+    const initializeEnhancedServices = async () => {
+      try {
+        console.log('🚀 [ComprehensiveDicomViewer] Initializing enhanced services...');
+
+        // Initialize error handler
+        errorHandlerRef.current = ErrorHandler.getInstance();
+        errorHandlerRef.current.onError((error) => {
+          console.error('🔴 [ComprehensiveDicomViewer] Enhanced error:', error);
+          setState(prev => ({ ...prev, error: error.message }));
+          if (onError) onError(error.message);
+        });
+
+        // Initialize performance monitor
+        performanceMonitorRef.current = PerformanceMonitor.getInstance();
+        // Performance monitoring is now active
+
+        // Initialize AI module
+        if (enableAI) {
+          aiModuleRef.current = new AIEnhancementModule();
+        }
+
+        // Initialize collaboration module
+        if (enableCollaboration) {
+          collaborationModuleRef.current = new CollaborationModule({});
+        }
+
+        // Initialize measurement service
+        if (enableAdvancedMeasurements) {
+          measurementServiceRef.current = new MeasurementService();
+        }
+
+        // Initialize annotation service
+        if (enableComprehensiveAnnotations) {
+          annotationServiceRef.current = new AnnotationSystem();
+        }
+
+        // Set up periodic system health monitoring
+        const healthInterval = setInterval(() => {
+          if (getSystemHealth) {
+            const health = getSystemHealth();
+            setSystemHealth(health);
+          }
+          
+          if (performanceMonitorRef.current) {
+            const metrics = performanceMonitorRef.current.getCurrentMetrics();
+            setPerformanceMetrics(metrics);
+          }
+        }, 5000);
+
+        console.log('✅ [ComprehensiveDicomViewer] Enhanced services initialized successfully');
+        return () => clearInterval(healthInterval);
+      } catch (err) {
+        console.error('❌ [ComprehensiveDicomViewer] Enhanced services initialization failed:', err);
+      }
+    };
+
+    initializeEnhancedServices();
+  }, [enableAI, enableCollaboration, enableAdvancedMeasurements, enableComprehensiveAnnotations, getSystemHealth, onError]);
+
+  // Sync with ViewerManager state
+  useEffect(() => {
+    if (currentState && manager) {
+      setState(prev => ({
+        ...prev,
+        zoom: currentState.viewport.zoom,
+        rotation: currentState.viewport.rotation,
+        pan: currentState.viewport.pan,
+        currentSlice: currentState.currentSliceIndex
+      }));
+    }
+  }, [currentState, manager]);
 
   // URL building utility with enhanced error handling
   const buildUrl = useCallback((raw: string) => {

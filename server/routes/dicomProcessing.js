@@ -9,25 +9,38 @@ const router = express.Router();
 const extractDicomSlices = (filePath, outputFormat = 'PNG', maxSlices = 10) => {
   return new Promise((resolve, reject) => {
     const pythonScript = path.join(__dirname, '..', 'utils', 'dicomHelper.py');
+    console.log(`Starting Python process with script: ${pythonScript}`);
+    console.log(`File path: ${filePath}`);
+    console.log(`Args: extract_slices, ${filePath}, ${outputFormat}, ${maxSlices}`);
+    
     const pythonProcess = spawn('python', [pythonScript, 'extract_slices', filePath, outputFormat, maxSlices.toString()]);
     
     let output = '';
     let errorOutput = '';
     
     pythonProcess.stdout.on('data', (data) => {
+      console.log(`STDOUT chunk received: ${data.toString().length} bytes`);
       output += data.toString();
     });
     
     pythonProcess.stderr.on('data', (data) => {
+      console.log(`STDERR chunk: ${data.toString()}`);
       errorOutput += data.toString();
     });
     
     pythonProcess.on('close', (code) => {
+      console.log(`Python process closed with code: ${code}`);
+      console.log(`Output length: ${output.length}`);
+      console.log(`Error output: ${errorOutput}`);
+      console.log(`First 500 chars of output: ${output.substring(0, 500)}`);
+      
       if (code === 0) {
         try {
           const result = JSON.parse(output);
+          console.log(`Parsed result - success: ${result.success}, slices count: ${result.slices ? result.slices.length : 'undefined'}`);
           resolve(result);
         } catch (parseError) {
+          console.log(`Parse error: ${parseError.message}`);
           reject(new Error(`Failed to parse Python output: ${parseError.message}`));
         }
       } else {
@@ -36,6 +49,7 @@ const extractDicomSlices = (filePath, outputFormat = 'PNG', maxSlices = 10) => {
     });
     
     pythonProcess.on('error', (error) => {
+      console.log(`Python process error: ${error.message}`);
       reject(new Error(`Failed to start Python process: ${error.message}`));
     });
   });

@@ -1,0 +1,403 @@
+/**
+ * Image Adjustment Panel Styles
+ * Professional medical imaging adjustment controls styling
+ */
+
+.image-adjustment-panel {
+  background: #1e1e1e;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  padding: 16px;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-width: 320px;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Header */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #333333;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  color: #ffffff;
+}
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-button {
+  background: #2a2a2a;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  color: #cccccc;
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button:hover {
+  background: #3a3a3a;
+  border-color: #505050;
+  color: #ffffff;
+}
+
+.icon-button:active {
+  background: #1a1a1a;
+}
+
+/* Presets Section */
+.presets-section {
+  margin-bottom: 16px;
+}
+
+.presets-section label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #cccccc;
+  margin-bottom: 6px;
+}
+
+.preset-selector {
+  width: 100%;
+  background: #2a2a2a;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  color: #ffffff;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.preset-selector:hover {
+  background: #3a3a3a;
+  border-color: #505050;
+}
+
+.preset-selector:focus {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+/* Controls Section */
+.controls-section {
+  margin-bottom: 16px;
+}
+
+.control-group {
+  margin-bottom: 16px;
+}
+
+.control-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #cccccc;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.adjustment-slider {
+  width: 100%;
+  height: 6px;
+  background: #404040;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: background 0.2s ease;
+}
+
+.adjustment-slider:hover {
+  background: #505050;
+}
+
+.adjustment-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: #0066cc;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.adjustment-slider::-webkit-slider-thumb:hover {
+  background: #0077dd;
+  transform: scale(1.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+.adjustment-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: #0066cc;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.adjustment-slider::-moz-range-thumb:hover {
+  background: #0077dd;
+  transform: scale(1.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Advanced Controls */
+.advanced-controls {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #252525;
+  border-radius: 6px;
+  border: 1px solid #333333;
+}
+
+/* Options Section */
+.options-section {
+  margin-bottom: 16px;
+}
+
+.colormap-selector {
+  width: 100%;
+  background: #2a2a2a;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  color: #ffffff;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.colormap-selector:hover {
+  background: #3a3a3a;
+  border-color: #505050;
+}
+
+.colormap-selector:focus {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+.toggle-advanced {
+  width: 100%;
+  background: #2a2a2a;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  color: #cccccc;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.toggle-advanced:hover {
+  background: #3a3a3a;
+  border-color: #505050;
+  color: #ffffff;
+}
+
+/* Histogram Section */
+.histogram-section {
+  margin-bottom: 16px;
+}
+
+.histogram-header {
+  margin-bottom: 8px;
+}
+
+.histogram-header label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #cccccc;
+  display: flex;
+  align-items: center;
+}
+
+.histogram-canvas {
+  width: 100%;
+  height: 150px;
+  background: #1a1a1a;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  cursor: crosshair;
+}
+
+.histogram-stats {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #999999;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+/* Status */
+.adjustment-status {
+  text-align: center;
+  font-size: 12px;
+  color: #ffcc00;
+  font-weight: 500;
+  padding: 8px;
+  background: rgba(255, 204, 0, 0.1);
+  border-radius: 4px;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Checkbox Styling */
+input[type="checkbox"] {
+  margin-right: 8px;
+  accent-color: #0066cc;
+  transform: scale(1.1);
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+  .image-adjustment-panel {
+    min-width: 280px;
+    padding: 12px;
+  }
+
+  .panel-header h3 {
+    font-size: 14px;
+  }
+
+  .control-group {
+    margin-bottom: 12px;
+  }
+
+  .histogram-canvas {
+    height: 120px;
+  }
+
+  .header-actions {
+    gap: 2px;
+  }
+
+  .icon-button {
+    padding: 4px;
+  }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  .image-adjustment-panel {
+    border: 2px solid #ffffff;
+  }
+
+  .adjustment-slider::-webkit-slider-thumb {
+    border: 2px solid #ffffff;
+  }
+
+  .adjustment-slider::-moz-range-thumb {
+    border: 2px solid #ffffff;
+  }
+
+  .histogram-canvas {
+    border: 2px solid #ffffff;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .adjustment-slider::-webkit-slider-thumb,
+  .adjustment-slider::-moz-range-thumb,
+  .icon-button,
+  .preset-selector,
+  .colormap-selector,
+  .toggle-advanced,
+  .adjustment-status {
+    transition: none;
+    animation: none;
+  }
+
+  .adjustment-slider::-webkit-slider-thumb:hover,
+  .adjustment-slider::-moz-range-thumb:hover {
+    transform: none;
+  }
+}
+
+/* Focus Styles for Accessibility */
+.adjustment-slider:focus-visible {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+
+.icon-button:focus-visible,
+.preset-selector:focus-visible,
+.colormap-selector:focus-visible,
+.toggle-advanced:focus-visible {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+
+/* Slider Track Styling */
+.adjustment-slider::-webkit-slider-track {
+  background: #404040;
+  border-radius: 3px;
+  height: 6px;
+}
+
+.adjustment-slider::-moz-range-track {
+  background: #404040;
+  border-radius: 3px;
+  height: 6px;
+  border: none;
+}
+
+/* Custom Scrollbar for Select Elements */
+.preset-selector::-webkit-scrollbar,
+.colormap-selector::-webkit-scrollbar {
+  width: 8px;
+}
+
+.preset-selector::-webkit-scrollbar-track,
+.colormap-selector::-webkit-scrollbar-track {
+  background: #2a2a2a;
+}
+
+.preset-selector::-webkit-scrollbar-thumb,
+.colormap-selector::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 4px;
+}
+
+.preset-selector::-webkit-scrollbar-thumb:hover,
+.colormap-selector::-webkit-scrollbar-thumb:hover {
+  background: #505050;
+}

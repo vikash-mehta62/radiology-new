@@ -49,19 +49,37 @@ interface ThreeDViewerProps {
   onSettingsChange: (settings: any) => void;
 }
 
+interface VolumeData {
+  dimensions: { width: number; height: number; depth: number };
+  spacing: { x: number; y: number; z: number };
+  data: Float32Array;
+  dataRange: { min: number; max: number };
+}
+
+interface RenderingState {
+  isLoading: boolean;
+  error: string | null;
+  progress: number;
+  volumeLoaded: boolean;
+  renderingMode: string;
+}
+
+interface Camera {
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number };
+  zoom: number;
+  fov: number;
+}
+
+
+
 interface ViewportState {
   rotation: { x: number; y: number; z: number };
   zoom: number;
   pan: { x: number; y: number };
 }
 
-interface VolumeData {
-  dimensions: { width: number; height: number; depth: number };
-  spacing: { x: number; y: number; z: number };
-  data: Uint16Array;
-  minValue: number;
-  maxValue: number;
-}
+// Duplicate interface removed - using the first definition
 
 const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
   study,
@@ -360,9 +378,8 @@ const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
       const volume: VolumeData = {
         dimensions,
         spacing,
-        data: volumeArray,
-        minValue,
-        maxValue
+        data: new Float32Array(volumeArray),
+        dataRange: { min: minValue, max: maxValue }
       };
 
       setVolumeData(volume);
@@ -396,7 +413,7 @@ const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
 
     // Convert Uint16 to Uint8 for WebGL compatibility
     const normalizedData = new Uint8Array(atlasWidth * atlasHeight);
-    const range = volume.maxValue - volume.minValue;
+    const range = volume.dataRange.max - volume.dataRange.min;
 
     for (let z = 0; z < depth; z++) {
       for (let y = 0; y < height; y++) {
@@ -405,7 +422,7 @@ const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
           const atlasIndex = y * atlasWidth + z * width + x;
 
           const normalizedValue = range > 0 ?
-            ((volume.data[volumeIndex] - volume.minValue) / range) * 255 : 0;
+            ((volume.data[volumeIndex] - volume.dataRange.min) / range) * 255 : 0;
           normalizedData[atlasIndex] = Math.floor(normalizedValue);
         }
       }

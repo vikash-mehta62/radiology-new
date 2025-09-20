@@ -49,7 +49,7 @@ app.use('/patients', patientsRouter);
 app.use('/studies', studiesRouter);
 app.use('/debug', debugRouter);
 app.use('/uploads', uploadsRouter);
-app.use('/api/dicom', dicomProcessingRoutes);
+app.use('/dicom', dicomProcessingRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

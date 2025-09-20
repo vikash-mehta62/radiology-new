@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 // MongoDB connection configuration
 class Database {
     constructor() {
-        this.mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/radiology_db';
+        this.mongoURI =  'mongodb+srv://mahitechnocrats:qNfbRMgnCthyu59@cluster1.xqa5iyj.mongodb.net/radiology_db';
         this.options = {
             useNewUrlParser: true,
             useUnifiedTopology: true,

@@ -16,11 +16,12 @@ import {
   Warning as WarningIcon,
 } from '@mui/icons-material';
 import ErrorDisplay from '../components/ErrorHandling/ErrorDisplay';
+import { ViewerError, ErrorType, ErrorSeverity, RecoveryOption } from '../services/errorHandler';
 
 const ErrorHandlingDemo: React.FC = () => {
   const [showError, setShowError] = useState<string | null>(null);
 
-  const mockErrors = {
+  const mockErrorData = {
     studyNotFound: {
       error: "StudyNotFoundError",
       message: "Study not found: 1.2.3.4.5.6.7.8.9.missing",
@@ -92,6 +93,24 @@ const ErrorHandlingDemo: React.FC = () => {
       timestamp: "2024-01-15T10:45:30.123Z"
     }
   };
+
+  // Convert mock error data to ViewerError format
+  const mockErrors: Record<string, ViewerError> = Object.fromEntries(
+    Object.entries(mockErrorData).map(([key, errorData]) => [
+      key,
+      {
+        name: errorData.error,
+        message: errorData.message,
+        type: 'NETWORK_ERROR' as ErrorType, // Default type
+        code: errorData.code,
+        severity: 'high' as ErrorSeverity,
+        retryable: true,
+        timestamp: Date.now(),
+        context: errorData.details,
+        requestId: errorData.request_id
+      } as ViewerError
+    ])
+  );
 
   const triggerComponentError = () => {
     // This will trigger the ErrorBoundary
@@ -219,6 +238,34 @@ const ErrorHandlingDemo: React.FC = () => {
                 <Divider sx={{ mb: 2 }} />
                 <ErrorDisplay
                   error={mockErrors[showError as keyof typeof mockErrors]}
+                  recoveryOptions={[
+                    {
+                      title: 'Retry',
+                      description: 'Try the operation again',
+                      actions: [{
+                        type: 'retry',
+                        label: 'Retry',
+                        description: 'Retry the failed operation',
+                        action: async () => true,
+                        priority: 1
+                      }],
+                      automatic: false,
+                      userConfirmationRequired: false
+                    },
+                    {
+                      title: 'Use Fallback',
+                      description: 'Use alternative method',
+                      actions: [{
+                        type: 'fallback',
+                        label: 'Use Fallback',
+                        description: 'Use alternative method',
+                        action: async () => true,
+                        priority: 2
+                      }],
+                      automatic: false,
+                      userConfirmationRequired: true
+                    }
+                  ]}
                   onRetry={() => {
                     console.log('Retry clicked for:', showError);
                     setShowError(null);

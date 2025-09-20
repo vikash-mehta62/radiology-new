@@ -1,261 +1,340 @@
-import React from 'react';
+/**
+ * Enhanced Error Display Component
+ * Provides user-friendly error messages with recovery options
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   Alert,
   AlertTitle,
   Box,
-  Typography,
-  Chip,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   Button,
+  ButtonGroup,
+  Card,
+  CardContent,
+  Chip,
+  Collapse,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  IconButton,
+  LinearProgress,
+  CircularProgress,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Paper,
+  Stack,
+  Typography,
+  useTheme
 } from '@mui/material';
 import {
-  ExpandMore as ExpandMoreIcon,
-  Refresh as RefreshIcon,
-  ContentCopy as ContentCopyIcon,
+  Error as ErrorIcon,
+  Warning as WarningIcon,
+  Info as InfoIcon,
+  CheckCircle as SuccessIcon,
+  Refresh as RetryIcon,
+  Build as FixIcon,
+  Report as ReportIcon,
+  ExpandMore as ExpandIcon,
+  ExpandLess as CollapseIcon,
+  Close as CloseIcon,
+  BugReport as BugIcon,
+  Speed as PerformanceIcon,
+  Memory as MemoryIcon,
+  Wifi as NetworkIcon,
+  Image as ImageIcon
 } from '@mui/icons-material';
-
-interface ApiError {
-  error: string;
-  message: string;
-  code: string;
-  details?: Record<string, any>;
-  request_id?: string;
-  timestamp?: string;
-}
+import { ViewerError, ErrorSeverity, ErrorType, RecoveryOption, RecoveryAction } from '../../services/errorHandler';
 
 interface ErrorDisplayProps {
-  error: ApiError | Error | string;
+  error: ViewerError;
+  recoveryOptions: RecoveryOption[];
   onRetry?: () => void;
+  onDismiss?: () => void;
+  onRecoveryAction?: (action: RecoveryAction) => Promise<boolean>;
   showDetails?: boolean;
-  severity?: 'error' | 'warning' | 'info';
+  compact?: boolean;
 }
 
 const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
   error,
+  recoveryOptions,
   onRetry,
+  onDismiss,
+  onRecoveryAction,
   showDetails = false,
-  severity = 'error'
+  compact = false
 }) => {
-  const parseError = (err: ApiError | Error | string): ApiError => {
-    if (typeof err === 'string') {
-      return {
-        error: 'Error',
-        message: err,
-        code: 'UNKNOWN_ERROR'
-      };
-    }
+  const theme = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const [executing, setExecuting] = useState<string | null>(null);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
-    if (err instanceof Error) {
-      return {
-        error: err.name || 'Error',
-        message: err.message,
-        code: 'CLIENT_ERROR'
-      };
-    }
-
-    return err;
-  };
-
-  const parsedError = parseError(error);
-
-  const copyErrorDetails = () => {
-    const errorDetails = {
-      error: parsedError.error,
-      message: parsedError.message,
-      code: parsedError.code,
-      details: parsedError.details,
-      request_id: parsedError.request_id,
-      timestamp: parsedError.timestamp || new Date().toISOString(),
-      url: window.location.href,
-      userAgent: navigator.userAgent
-    };
-
-    navigator.clipboard.writeText(JSON.stringify(errorDetails, null, 2));
-  };
-
-  const getErrorTitle = () => {
-    switch (parsedError.code) {
-      case 'STUDY_NOT_FOUND':
-        return 'Study Not Found';
-      case 'AI_SERVICE_ERROR':
-        return 'AI Service Error';
-      case 'VALIDATION_ERROR':
-        return 'Validation Error';
-      case 'BILLING_VALIDATION_ERROR':
-        return 'Billing Validation Error';
-      case 'CIRCUIT_BREAKER_OPEN':
-        return 'Service Temporarily Unavailable';
-      case 'RATE_LIMIT_ERROR':
-        return 'Rate Limit Exceeded';
+  const getSeverityColor = (severity: ErrorSeverity) => {
+    switch (severity) {
+      case ErrorSeverity.CRITICAL:
+        return 'error';
+      case ErrorSeverity.HIGH:
+        return 'error';
+      case ErrorSeverity.MEDIUM:
+        return 'warning';
+      case ErrorSeverity.LOW:
+        return 'info';
       default:
-        return 'Error';
+        return 'info';
     }
   };
 
-  const getErrorIcon = () => {
-    switch (parsedError.code) {
-      case 'CIRCUIT_BREAKER_OPEN':
-        return '🚫';
-      case 'RATE_LIMIT_ERROR':
-        return '⏱️';
-      case 'AI_SERVICE_ERROR':
-        return '🤖';
-      case 'VALIDATION_ERROR':
-        return '⚠️';
-      case 'STUDY_NOT_FOUND':
-        return '📋';
+  const getSeverityIcon = (severity: ErrorSeverity) => {
+    switch (severity) {
+      case ErrorSeverity.CRITICAL:
+      case ErrorSeverity.HIGH:
+        return <ErrorIcon />;
+      case ErrorSeverity.MEDIUM:
+        return <WarningIcon />;
+      case ErrorSeverity.LOW:
+        return <InfoIcon />;
       default:
-        return '❌';
+        return <InfoIcon />;
     }
   };
+
+  const getErrorTypeIcon = (type: ErrorType) => {
+    switch (type) {
+      case ErrorType.NETWORK_ERROR:
+        return <NetworkIcon />;
+      case ErrorType.MEMORY_ERROR:
+        return <MemoryIcon />;
+      case ErrorType.RENDERING_ERROR:
+      case ErrorType.DICOM_PARSING_ERROR:
+        return <ImageIcon />;
+      case ErrorType.GPU_ERROR:
+        return <PerformanceIcon />;
+      default:
+        return <BugIcon />;
+    }
+  };
+
+  const handleRecoveryAction = async (action: RecoveryAction) => {
+    if (!onRecoveryAction) return;
+
+    setExecuting(action.type);
+    try {
+      const success = await onRecoveryAction(action);
+      if (success && onDismiss) {
+        onDismiss();
+      }
+    } catch (error) {
+      console.error('Recovery action failed:', error);
+    } finally {
+      setExecuting(null);
+    }
+  };
+
+  const formatTimestamp = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
+  if (compact) {
+    return (
+      <Alert
+        severity={getSeverityColor(error.severity) as any}
+        action={
+          <Box>
+            {onRetry && (
+              <IconButton
+                size="small"
+                onClick={onRetry}
+                disabled={!error.retryable}
+              >
+                <RetryIcon />
+              </IconButton>
+            )}
+            {onDismiss && (
+              <IconButton size="small" onClick={onDismiss}>
+                <CloseIcon />
+              </IconButton>
+            )}
+          </Box>
+        }
+      >
+        {error.message}
+      </Alert>
+    );
+  }
 
   return (
-    <Box sx={{ my: 2 }}>
-      <Alert severity={severity}>
-        <AlertTitle>
-          {getErrorIcon()} {getErrorTitle()}
-        </AlertTitle>
-        
-        <Typography variant="body2" sx={{ mb: 2 }}>
-          {parsedError.message}
-        </Typography>
-
-        {parsedError.request_id && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" color="text.secondary">
-              Request ID: <Chip label={parsedError.request_id} size="small" />
+    <Card
+      sx={{
+        mb: 2,
+        border: `2px solid ${theme.palette[getSeverityColor(error.severity) as 'error' | 'warning' | 'info' | 'success'].main}`,
+        backgroundColor: theme.palette.background.paper
+      }}
+    >
+      <CardContent>
+        {/* Error Header */}
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+          <Box sx={{ mr: 2, mt: 0.5 }}>
+            {getSeverityIcon(error.severity)}
+          </Box>
+          <Box sx={{ flexGrow: 1 }}>
+            <Typography variant="h6" gutterBottom>
+              {error.message}
+            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+              <Chip
+                icon={getErrorTypeIcon(error.type)}
+                label={error.type.replace('_', ' ').toUpperCase()}
+                size="small"
+                color={getSeverityColor(error.severity) as any}
+                variant="outlined"
+              />
+              <Chip
+                label={error.severity.toUpperCase()}
+                size="small"
+                color={getSeverityColor(error.severity) as any}
+              />
+              {error.retryable && (
+                <Chip
+                  label="RETRYABLE"
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                />
+              )}
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Error Code: {error.code} • {formatTimestamp(error.timestamp)}
             </Typography>
           </Box>
-        )}
-
-        {parsedError.timestamp && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" color="text.secondary">
-              Time: {new Date(parsedError.timestamp).toLocaleString()}
-            </Typography>
-          </Box>
-        )}
-
-        {/* Action Buttons */}
-        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-          {onRetry && (
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<RefreshIcon />}
-              onClick={onRetry}
-            >
-              Retry
-            </Button>
+          {onDismiss && (
+            <IconButton onClick={onDismiss} size="small">
+              <CloseIcon />
+            </IconButton>
           )}
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<ContentCopyIcon />}
-            onClick={copyErrorDetails}
-          >
-            Copy Details
-          </Button>
         </Box>
 
-        {/* Error Details */}
-        {(showDetails || process.env.NODE_ENV === 'development') && (
-          <>
-            <Divider sx={{ my: 1 }} />
-            <Accordion>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">
-                  Error Details
+        {/* Recovery Actions */}
+        {recoveryOptions.length > 0 && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Suggested Actions:
+            </Typography>
+            {recoveryOptions.map((option, optionIndex) => (
+              <Box key={optionIndex} sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  {option.description}
                 </Typography>
-              </AccordionSummary>
-              <AccordionDetails>
+                <ButtonGroup size="small" variant="outlined">
+                  {option.actions
+                    .sort((a, b) => a.priority - b.priority)
+                    .map((action, actionIndex) => (
+                      <Button
+                        key={actionIndex}
+                        onClick={() => handleRecoveryAction(action)}
+                        disabled={executing === action.type}
+                        startIcon={
+                          executing === action.type ? (
+                            <CircularProgress size={16} />
+                          ) : action.type === 'retry' ? (
+                            <RetryIcon />
+                          ) : (
+                            <FixIcon />
+                          )
+                        }
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                </ButtonGroup>
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {/* Quick Retry Button */}
+        {onRetry && error.retryable && (
+          <Box sx={{ mb: 2 }}>
+            <Button
+              variant="contained"
+              startIcon={<RetryIcon />}
+              onClick={onRetry}
+              color={getSeverityColor(error.severity) as any}
+            >
+              Try Again
+            </Button>
+          </Box>
+        )}
+
+        {/* Expandable Details */}
+        <Box>
+          <Button
+            size="small"
+            onClick={() => setExpanded(!expanded)}
+            endIcon={expanded ? <CollapseIcon /> : <ExpandIcon />}
+          >
+            {expanded ? 'Hide Details' : 'Show Details'}
+          </Button>
+          
+          <Collapse in={expanded}>
+            <Box sx={{ mt: 2 }}>
+              <Divider sx={{ mb: 2 }} />
+              
+              {/* Context Information */}
+              {error.context && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="subtitle2" gutterBottom>
-                    Error Code:
+                    Context Information:
                   </Typography>
-                  <Chip label={parsedError.code} size="small" />
+                  <Paper variant="outlined" sx={{ p: 1, backgroundColor: 'grey.50' }}>
+                    <Typography variant="body2" component="pre" sx={{ fontSize: '0.75rem' }}>
+                      {JSON.stringify(error.context, null, 2)}
+                    </Typography>
+                  </Paper>
                 </Box>
+              )}
 
-                {parsedError.details && Object.keys(parsedError.details).length > 0 && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Additional Details:
+              {/* Technical Details */}
+              <Box sx={{ mb: 2 }}>
+                <Button
+                  size="small"
+                  onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                  startIcon={<BugIcon />}
+                >
+                  {showTechnicalDetails ? 'Hide' : 'Show'} Technical Details
+                </Button>
+                
+                <Collapse in={showTechnicalDetails}>
+                  <Paper variant="outlined" sx={{ p: 1, mt: 1, backgroundColor: 'grey.50' }}>
+                    <Typography variant="body2" component="pre" sx={{ fontSize: '0.75rem' }}>
+                      {error.stack || 'No stack trace available'}
                     </Typography>
-                    <Box
-                      sx={{
-                        backgroundColor: 'grey.100',
-                        p: 1,
-                        borderRadius: 1,
-                        fontFamily: 'monospace',
-                        fontSize: '0.875rem',
-                      }}
-                    >
-                      <pre>{JSON.stringify(parsedError.details, null, 2)}</pre>
-                    </Box>
-                  </Box>
-                )}
+                  </Paper>
+                </Collapse>
+              </Box>
 
-                {/* Specific error guidance */}
-                {parsedError.code === 'STUDY_NOT_FOUND' && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Suggestions:
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      • Check if the study UID is correct
-                      • Verify the study has been properly ingested
-                      • Contact support if the study should exist
-                    </Typography>
-                  </Box>
-                )}
-
-                {parsedError.code === 'AI_SERVICE_ERROR' && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Suggestions:
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      • The AI service may be temporarily overloaded
-                      • Try again in a few moments
-                      • You can create reports manually if needed
-                    </Typography>
-                  </Box>
-                )}
-
-                {parsedError.code === 'CIRCUIT_BREAKER_OPEN' && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Suggestions:
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      • The service is temporarily unavailable due to high failure rate
-                      • Please wait a moment and try again
-                      • The system will automatically recover when the service is stable
-                    </Typography>
-                  </Box>
-                )}
-
-                {parsedError.code === 'VALIDATION_ERROR' && parsedError.details?.examples && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Valid Examples:
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                      {parsedError.details.examples.map((example: string, index: number) => (
-                        <Chip key={index} label={example} size="small" variant="outlined" />
-                      ))}
-                    </Box>
-                  </Box>
-                )}
-              </AccordionDetails>
-            </Accordion>
-          </>
-        )}
-      </Alert>
-    </Box>
+              {/* Report Issue */}
+              <Box>
+                <Button
+                  size="small"
+                  startIcon={<ReportIcon />}
+                  onClick={() => {
+                    // Implementation for reporting issues
+                    console.log('Report issue:', error);
+                  }}
+                >
+                  Report This Issue
+                </Button>
+              </Box>
+            </Box>
+          </Collapse>
+        </Box>
+      </CardContent>
+    </Card>
   );
 };
 

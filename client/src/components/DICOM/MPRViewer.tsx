@@ -1,14 +1,23 @@
+/**
+ * MPR (Multi-Planar Reconstruction) Viewer Component
+ * Displays axial, sagittal, and coronal views of DICOM studies
+ */
+
 import React, { useRef, useEffect, useState } from 'react';
 import {
   Box,
-  Grid,
-  Paper,
-  Typography,
-  FormControlLabel,
-  Switch,
   Card,
   CardContent,
-  Slider
+  Typography,
+  Grid,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
+  Switch,
+  FormControlLabel,
+  Alert
 } from '@mui/material';
 import { Study } from '../../types';
 import { dicomService } from '../../services/dicomService';
@@ -16,34 +25,55 @@ import { dicomService } from '../../services/dicomService';
 interface MPRViewerProps {
   study: Study;
   imageIds: string[];
-  planes: {
-    axial: boolean;
-    sagittal: boolean;
-    coronal: boolean;
+  settings: {
+    windowWidth: number;
+    windowCenter: number;
+    crosshairEnabled: boolean;
+    synchronizedScrolling: boolean;
   };
-  onPlanesChange: (planes: any) => void;
+  onSettingsChange: (settings: any) => void;
+}
+
+interface MPRPlanes {
+  axial: boolean;
+  sagittal: boolean;
+  coronal: boolean;
 }
 
 const MPRViewer: React.FC<MPRViewerProps> = ({
   study,
   imageIds,
-  planes,
-  onPlanesChange
+  settings,
+  onSettingsChange
 }) => {
-  const axialRef = useRef<HTMLDivElement>(null);
-  const sagittalRef = useRef<HTMLDivElement>(null);
-  const coronalRef = useRef<HTMLDivElement>(null);
-  const [crosshairPosition, setCrosshairPosition] = useState({ x: 0.5, y: 0.5, z: 0.5 });
-  const [sliceIndices, setSliceIndices] = useState({ axial: 0, sagittal: 0, coronal: 0 });
+  const axialRef = useRef<HTMLCanvasElement>(null);
+  const sagittalRef = useRef<HTMLCanvasElement>(null);
+  const coronalRef = useRef<HTMLCanvasElement>(null);
+  
+  const [planes, setPlanes] = useState<MPRPlanes>({
+    axial: true,
+    sagittal: true,
+    coronal: true
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    initializeMPRViewers();
-  }, [imageIds]);
+    initializeMPRViews();
+  }, [imageIds, study]);
 
-  const initializeMPRViewers = async () => {
+  const initializeMPRViews = async () => {
     try {
-      // Initialize each plane viewer
-      if (planes.axial && axialRef.current && imageIds.length > 0) {
+      setIsLoading(true);
+      setError(null);
+
+      if (imageIds.length === 0) {
+        setError('No images available for MPR reconstruction');
+        return;
+      }
+
+      // Initialize each plane view
+      if (planes.axial && axialRef.current) {
         await dicomService.displayImage(axialRef.current, imageIds[0]);
       }
       if (planes.sagittal && sagittalRef.current && imageIds.length > 0) {
@@ -52,149 +82,188 @@ const MPRViewer: React.FC<MPRViewerProps> = ({
       if (planes.coronal && coronalRef.current && imageIds.length > 0) {
         await dicomService.displayImage(coronalRef.current, imageIds[0]);
       }
+
+      setIsLoading(false);
     } catch (error) {
       console.error('Failed to initialize MPR viewers:', error);
+      setError('Failed to initialize MPR views');
+      setIsLoading(false);
     }
   };
 
-  const handleSliceChange = (plane: 'axial' | 'sagittal' | 'coronal', value: number) => {
-    setSliceIndices(prev => ({ ...prev, [plane]: value }));
-    
-    // Update the corresponding viewer with new slice
-    const imageIndex = Math.floor(value * (imageIds.length - 1));
-    if (imageIndex < imageIds.length) {
-      const ref = plane === 'axial' ? axialRef : plane === 'sagittal' ? sagittalRef : coronalRef;
-      if (ref.current) {
-        dicomService.displayImage(ref.current, imageIds[imageIndex]);
-      }
-    }
+  const handlePlaneToggle = (plane: keyof MPRPlanes) => {
+    setPlanes(prev => ({
+      ...prev,
+      [plane]: !prev[plane]
+    }));
   };
 
-  const renderPlaneViewer = (plane: 'axial' | 'sagittal' | 'coronal', ref: React.RefObject<HTMLDivElement>) => {
-    if (!planes[plane]) return null;
+  const handleSettingsChange = (key: string, value: any) => {
+    onSettingsChange({
+      ...settings,
+      [key]: value
+    });
+  };
 
+  if (error) {
     return (
-      <Grid item xs={12} md={4}>
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              {plane.charAt(0).toUpperCase() + plane.slice(1)} View
-            </Typography>
-            <Box
-              ref={ref}
-              sx={{
-                width: '100%',
-                height: '300px',
-                backgroundColor: '#000',
-                position: 'relative',
-                border: '1px solid #333'
-              }}
-            />
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" gutterBottom>
-                Slice: {Math.round(sliceIndices[plane] * (imageIds.length - 1)) + 1} / {imageIds.length}
-              </Typography>
-              <Slider
-                value={sliceIndices[plane]}
-                onChange={(_, value) => handleSliceChange(plane, value as number)}
-                min={0}
-                max={1}
-                step={1 / Math.max(1, imageIds.length - 1)}
-                size="small"
-              />
-            </Box>
-          </CardContent>
-        </Card>
-      </Grid>
+      <Alert severity="error" sx={{ m: 2 }}>
+        {error}
+      </Alert>
     );
-  };
+  }
 
   return (
     <Box sx={{ p: 2 }}>
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" gutterBottom>
-          Multi-Planar Reconstruction (MPR)
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={planes.axial}
-                onChange={(e) => onPlanesChange({ ...planes, axial: e.target.checked })}
-              />
-            }
-            label="Axial"
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={planes.sagittal}
-                onChange={(e) => onPlanesChange({ ...planes, sagittal: e.target.checked })}
-              />
-            }
-            label="Sagittal"
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={planes.coronal}
-                onChange={(e) => onPlanesChange({ ...planes, coronal: e.target.checked })}
-              />
-            }
-            label="Coronal"
-          />
-        </Box>
-      </Box>
+      <Typography variant="h6" gutterBottom>
+        Multi-Planar Reconstruction (MPR)
+      </Typography>
 
-      <Grid container spacing={2}>
-        {renderPlaneViewer('axial', axialRef)}
-        {renderPlaneViewer('sagittal', sagittalRef)}
-        {renderPlaneViewer('coronal', coronalRef)}
-      </Grid>
-
-      {/* Crosshair Controls */}
-      <Card sx={{ mt: 2 }}>
+      {/* Controls */}
+      <Card sx={{ mb: 2 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Crosshair Position
-          </Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={4}>
-              <Typography variant="caption">X Position</Typography>
-              <Slider
-                value={crosshairPosition.x}
-                onChange={(_, value) => setCrosshairPosition(prev => ({ ...prev, x: value as number }))}
-                min={0}
-                max={1}
-                step={0.01}
-                size="small"
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={planes.axial}
+                    onChange={() => handlePlaneToggle('axial')}
+                  />
+                }
+                label="Axial"
               />
             </Grid>
-            <Grid item xs={4}>
-              <Typography variant="caption">Y Position</Typography>
-              <Slider
-                value={crosshairPosition.y}
-                onChange={(_, value) => setCrosshairPosition(prev => ({ ...prev, y: value as number }))}
-                min={0}
-                max={1}
-                step={0.01}
-                size="small"
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={planes.sagittal}
+                    onChange={() => handlePlaneToggle('sagittal')}
+                  />
+                }
+                label="Sagittal"
               />
             </Grid>
-            <Grid item xs={4}>
-              <Typography variant="caption">Z Position</Typography>
-              <Slider
-                value={crosshairPosition.z}
-                onChange={(_, value) => setCrosshairPosition(prev => ({ ...prev, z: value as number }))}
-                min={0}
-                max={1}
-                step={0.01}
-                size="small"
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={planes.coronal}
+                    onChange={() => handlePlaneToggle('coronal')}
+                  />
+                }
+                label="Coronal"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={settings.crosshairEnabled}
+                    onChange={(e) => handleSettingsChange('crosshairEnabled', e.target.checked)}
+                  />
+                }
+                label="Crosshair"
               />
             </Grid>
           </Grid>
+
+          <Box sx={{ mt: 2 }}>
+            <Typography gutterBottom>Window Width: {settings.windowWidth}</Typography>
+            <Slider
+              value={settings.windowWidth}
+              onChange={(_, value) => handleSettingsChange('windowWidth', value)}
+              min={1}
+              max={4000}
+              step={1}
+            />
+          </Box>
+
+          <Box sx={{ mt: 2 }}>
+            <Typography gutterBottom>Window Center: {settings.windowCenter}</Typography>
+            <Slider
+              value={settings.windowCenter}
+              onChange={(_, value) => handleSettingsChange('windowCenter', value)}
+              min={-1000}
+              max={3000}
+              step={1}
+            />
+          </Box>
         </CardContent>
       </Card>
+
+      {/* MPR Views */}
+      <Grid container spacing={2}>
+        {planes.axial && (
+          <Grid item xs={12} md={4}>
+            <Card>
+              <CardContent>
+                <Typography variant="subtitle1" gutterBottom>
+                  Axial View
+                </Typography>
+                <canvas
+                  ref={axialRef}
+                  style={{
+                    width: '100%',
+                    height: '300px',
+                    border: '1px solid #ccc',
+                    backgroundColor: '#000'
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {planes.sagittal && (
+          <Grid item xs={12} md={4}>
+            <Card>
+              <CardContent>
+                <Typography variant="subtitle1" gutterBottom>
+                  Sagittal View
+                </Typography>
+                <canvas
+                  ref={sagittalRef}
+                  style={{
+                    width: '100%',
+                    height: '300px',
+                    border: '1px solid #ccc',
+                    backgroundColor: '#000'
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {planes.coronal && (
+          <Grid item xs={12} md={4}>
+            <Card>
+              <CardContent>
+                <Typography variant="subtitle1" gutterBottom>
+                  Coronal View
+                </Typography>
+                <canvas
+                  ref={coronalRef}
+                  style={{
+                    width: '100%',
+                    height: '300px',
+                    border: '1px solid #ccc',
+                    backgroundColor: '#000'
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+      </Grid>
+
+      {isLoading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+          <Typography>Loading MPR views...</Typography>
+        </Box>
+      )}
     </Box>
   );
 };

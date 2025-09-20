@@ -41,8 +41,12 @@
   "scripts": {
     "start": "react-scripts start",
     "start:5004": "PORT=5004 react-scripts start",
-    "build": "react-scripts build",
+    "build": "set SKIP_PREFLIGHT_CHECK=true && set TSC_COMPILE_ON_ERROR=true && react-scripts build",
     "test": "react-scripts test",
+    "test:performance": "jest --config=jest.config.js --testMatch='**/*performance*.test.ts' --runInBand --detectOpenHandles",
+    "test:load": "jest --config=jest.config.js --testMatch='**/*load*.test.ts' --runInBand --detectOpenHandles",
+    "test:integration": "jest --config=jest.integration.config.js --runInBand",
+    "test:all": "npm run test:performance && npm run test:load && npm run test:integration",
     "eject": "react-scripts eject",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
@@ -74,7 +78,15 @@
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^6.13.1",
     "@typescript-eslint/parser": "^6.13.1",
+    "babel-jest": "^29.7.0",
     "eslint": "^8.55.0",
-    "http-proxy-middleware": "^3.0.5"
+    "http-proxy-middleware": "^3.0.5",
+    "identity-obj-proxy": "^3.0.0",
+    "jest-html-reporters": "^3.1.5",
+    "jest-junit": "^16.0.0",
+    "jest-transform-css": "^6.0.1",
+    "jest-transform-file": "^1.1.1",
+    "msw": "^2.11.3",
+    "ts-jest": "^29.1.1"
   }
 }

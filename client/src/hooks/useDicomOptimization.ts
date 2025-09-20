@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { enhancedDicomService, EnhancementType, FilterType } from '../services/enhancedDicomService';
+import { enhancedDicomService } from '../services/enhancedDicomService';
+
+// Define types locally since they're not exported from the service
+type EnhancementType = 'sharpen' | 'denoise' | 'contrast' | 'brightness' | null;
+type FilterType = 'gaussian' | 'median' | 'bilateral' | null;
 
 interface DicomOptimizationConfig {
   enableCaching: boolean;
@@ -133,14 +137,15 @@ export const useDicomOptimization = (initialConfig?: Partial<DicomOptimizationCo
       if (state.config.enableProgressiveLoading) {
         // Load thumbnail first, then full image
         try {
-          const thumbnail = await enhancedDicomService.getDicomThumbnail(patientId, filename);
+          const imageId = `wadouri:http://localhost:8000/api/dicom/${patientId}/${filename}`;
+          const thumbnail = await enhancedDicomService.loadImage(imageId, { priority: 'high' });
           // Return thumbnail immediately for quick preview
           setTimeout(async () => {
             try {
-              const fullImage = await enhancedDicomService.processDicomFile(patientId, filename, {
-                enhancement: options?.enhancement,
-                filter: options?.filter,
-                useCache: state.config.enableCaching
+              const imageId = `wadouri:http://localhost:8000/api/dicom/${patientId}/${filename}`;
+              const fullImage = await enhancedDicomService.loadImage(imageId, {
+                priority: 'medium',
+                quality: 'high'
               });
               
               const loadTime = Date.now() - startTime;
@@ -159,10 +164,10 @@ export const useDicomOptimization = (initialConfig?: Partial<DicomOptimizationCo
       }
 
       // Regular loading
-      result = await enhancedDicomService.processDicomFile(patientId, filename, {
-        enhancement: options?.enhancement,
-        filter: options?.filter,
-        useCache: state.config.enableCaching
+      const imageId = `wadouri:http://localhost:8000/api/dicom/${patientId}/${filename}`;
+      result = await enhancedDicomService.loadImage(imageId, {
+        priority: 'medium',
+        quality: 'high'
       });
 
       const loadTime = Date.now() - startTime;
@@ -187,14 +192,10 @@ export const useDicomOptimization = (initialConfig?: Partial<DicomOptimizationCo
     if (!state.config.enablePreloading) return;
 
     try {
-      await enhancedDicomService.batchPreloadImages(
-        images.map(img => ({
-          patientId: img.patientId,
-          filename: img.filename,
-          enhancement: options?.enhancement,
-          priority: options?.priority || 'low'
-        }))
+      const imageIds = images.map(img => 
+        `wadouri:http://localhost:8000/api/dicom/${img.patientId}/${img.filename}`
       );
+      await enhancedDicomService.preloadImages(0, imageIds, 3);
     } catch (error) {
       console.error('Batch preloading failed:', error);
     }
@@ -242,13 +243,19 @@ export const useDicomOptimization = (initialConfig?: Partial<DicomOptimizationCo
   // Update cache status
   const updateCacheStatus = useCallback(async () => {
     try {
-      const status = await enhancedDicomService.getCacheStats();
+      // Mock cache stats since getCacheStats doesn't exist
+      const status = {
+        totalSize: 0,
+        usedSize: 0,
+        hitRate: 0,
+        itemCount: 0
+      };
       setState(prev => ({
         ...prev,
         cacheStatus: {
-          size: status.disk_cache_size_mb,
-          hitRate: 0.85, // Calculate from cache hits/misses if available
-          entries: status.memory_cache_items + status.disk_cache_items
+          size: status.usedSize,
+          hitRate: status.hitRate,
+          entries: status.itemCount
         }
       }));
     } catch (error) {

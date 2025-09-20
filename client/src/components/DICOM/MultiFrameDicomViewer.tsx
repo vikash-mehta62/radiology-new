@@ -2,15 +2,28 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
     Box, Typography, Paper, IconButton, Tooltip, 
     Grid, Chip, Button, Alert, LinearProgress,
-    Stack, useMediaQuery, useTheme, Slider
+    Stack, useMediaQuery, useTheme, Slider, Snackbar
 } from '@mui/material';
 import {
     ZoomIn, ZoomOut, RotateLeft, RotateRight, 
     RestartAlt, Fullscreen, PlayArrow, 
-    Pause, SkipNext, SkipPrevious, Speed
+    Pause, SkipNext, SkipPrevious, Speed as SpeedIcon,
+    Memory, Error as ErrorIcon, AutoAwesome
 } from '@mui/icons-material';
 import type { Study } from '../../types';
-import { dicomService } from '../../services/dicomService';
+import { enhancedDicomService } from '../../services/enhancedDicomService';
+import { performanceMonitor, PerformanceMonitor } from '../../services/performanceMonitor';
+import { useDicomErrorHandler } from '../../hooks/useErrorHandler';
+import { useFullSliceNavigation } from '../../hooks/useSliceNavigation';
+import ErrorDisplay from '../ErrorHandling/ErrorDisplay';
+import PerformanceDashboard from '../Performance/PerformanceDashboard';
+
+// Import enhanced services
+import { ErrorHandler } from '../../services/errorHandler';
+import { AdaptivePerformanceSystem } from '../../services/adaptivePerformanceSystem';
+import { ProgressiveLoadingSystem } from '../../services/progressiveLoadingSystem';
+import { MemoryManagementSystem } from '../../services/memoryManagementSystem';
+import { IntelligentCacheManager } from '../../services/intelligentCacheManager';
 import * as cornerstone from 'cornerstone-core';
 import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
 import * as dicomParser from 'dicom-parser';
@@ -117,12 +130,114 @@ try {
 interface MultiFrameDicomViewerProps {
     study: Study;
     onError?: (error: string) => void;
+    initialState?: {
+        zoom?: number;
+        rotation?: number;
+        brightness?: number;
+        contrast?: number;
+        pan?: { x: number; y: number };
+        currentSlice?: number;
+    };
+    enableEnhancedNavigation?: boolean;
+    enableIntelligentCaching?: boolean;
+    enablePerformanceMonitoring?: boolean;
+    enableProgressiveLoading?: boolean;
 }
 
-const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, onError }) => {
+const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ 
+    study, 
+    onError,
+    initialState,
+    enableEnhancedNavigation = true,
+    enableIntelligentCaching = true,
+    enablePerformanceMonitoring = true,
+    enableProgressiveLoading = true
+}) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const currentImageRef = useRef<HTMLImageElement | null>(null);
+    
+    // Helper function to convert cornerstone image to HTML image
+    const convertCornerstoneToHtmlImage = async (cornerstoneImage: any): Promise<HTMLImageElement> => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Could not get canvas context');
+        
+        canvas.width = cornerstoneImage.width;
+        canvas.height = cornerstoneImage.height;
+        
+        const imageData = ctx.createImageData(cornerstoneImage.width, cornerstoneImage.height);
+        imageData.data.set(cornerstoneImage.getPixelData());
+        ctx.putImageData(imageData, 0, 0);
+        
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = canvas.toDataURL();
+        });
+    };
+
+    // Helper function to load image via backend API
+    const loadImageViaBackendApi = async (study: Study, imageIndex: number): Promise<HTMLImageElement | null> => {
+        try {
+            const apiUrl = `http://localhost:8000/dicom/process/${study.patient_id}/${study.original_filename}?output_format=PNG&frame=${imageIndex}`;
+            
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error(`API request failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+            if (!result.success || !result.image_data) {
+                throw new Error('No image data in API response');
+            }
+
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = `data:image/png;base64,${result.image_data}`;
+            });
+        } catch (error) {
+            console.error('Backend API fallback failed:', error);
+            return null;
+        }
+    };
+
+    // Enhanced services
+    const errorHandlerRef = useRef<ErrorHandler | null>(null);
+    const performanceMonitorRef = useRef<PerformanceMonitor | null>(null);
+    const adaptivePerformanceRef = useRef<AdaptivePerformanceSystem | null>(null);
+    const progressiveLoadingRef = useRef<ProgressiveLoadingSystem | null>(null);
+    const memoryManagerRef = useRef<MemoryManagementSystem | null>(null);
+    const cacheManagerRef = useRef<IntelligentCacheManager | null>(null);
+    
+    // Enhanced error handling
+    const {
+        error: viewerError,
+        isRetrying,
+        recoveryOptions,
+        handleError,
+        retry,
+        dismiss,
+        executeRecoveryAction,
+        clearError
+    } = useDicomErrorHandler({
+        onError: (error) => {
+            console.error('DICOM Viewer Error:', error);
+            if (onError) {
+                onError(error.message);
+            }
+        },
+        onRecovery: (success, action) => {
+            console.log(`Recovery ${success ? 'succeeded' : 'failed'}: ${action}`);
+            if (success) {
+                // Retry loading the current study
+                loadDicomImages();
+            }
+        }
+    });
     
     // Responsive design
     const theme = useTheme();
@@ -130,21 +245,103 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
     
     // Core states
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [imageLoaded, setImageLoaded] = useState(false);
     
-    // Image manipulation
-    const [zoom, setZoom] = useState(1);
-    const [rotation, setRotation] = useState(0);
-    const [pan, setPan] = useState({ x: 0, y: 0 });
+    // Image manipulation with initial state support
+    const [zoom, setZoom] = useState(initialState?.zoom || 1);
+    const [rotation, setRotation] = useState(initialState?.rotation || 0);
+    const [pan, setPan] = useState(initialState?.pan || { x: 0, y: 0 });
     
-    // Multi-slice support (updated to match AdvancedMedicalDicomViewer)
+    // Multi-slice support with enhanced navigation
     const [loadedImages, setLoadedImages] = useState<any[]>([]);
-    const [currentSlice, setCurrentSlice] = useState(0);
-    const [totalSlices, setTotalSlices] = useState(1);
     const [isPlaying, setIsPlaying] = useState(false);
     const [playSpeed, setPlaySpeed] = useState(2); // Slices per second
     const [autoScroll, setAutoScroll] = useState(false);
+    
+    // Performance monitoring
+    const [showPerformance, setShowPerformance] = useState(false);
+    const [renderingMetrics, setRenderingMetrics] = useState<any>(null);
+    const [adaptiveQuality, setAdaptiveQuality] = useState<'low' | 'medium' | 'high'>('medium');
+    const [showPerformanceAlert, setShowPerformanceAlert] = useState(false);
+    const [cacheStats, setCacheStats] = useState<any>(null);
+
+    // Initialize enhanced services
+    useEffect(() => {
+        const initializeEnhancedServices = async () => {
+            try {
+                console.log('🚀 [MultiFrameDicomViewer] Initializing enhanced services...');
+
+                // Initialize error handler
+                errorHandlerRef.current = ErrorHandler.getInstance();
+                errorHandlerRef.current.onError((error) => {
+                    console.error('🔴 [MultiFrameDicomViewer] Enhanced error:', error);
+                    handleError(error);
+                });
+
+                // Initialize performance monitor
+                if (enablePerformanceMonitoring) {
+                    performanceMonitorRef.current = PerformanceMonitor.getInstance();
+                    // Performance monitoring is now active
+                }
+
+                // Initialize adaptive performance
+                adaptivePerformanceRef.current = new AdaptivePerformanceSystem();
+
+                // Initialize progressive loading
+                if (enableProgressiveLoading) {
+                    progressiveLoadingRef.current = new ProgressiveLoadingSystem();
+                }
+
+                // Initialize memory manager
+                memoryManagerRef.current = new MemoryManagementSystem();
+
+                // Initialize intelligent cache manager
+                if (enableIntelligentCaching) {
+                    cacheManagerRef.current = new IntelligentCacheManager();
+                    
+                    // Set up cache monitoring
+                    const updateCacheStats = () => {
+                        if (cacheManagerRef.current) {
+                            const stats = cacheManagerRef.current.getCacheStatistics();
+                            setCacheStats(stats);
+                        }
+                    };
+
+                    const cacheInterval = setInterval(updateCacheStats, 3000);
+                    return () => clearInterval(cacheInterval);
+                }
+
+                console.log('✅ [MultiFrameDicomViewer] Enhanced services initialized successfully');
+            } catch (err) {
+                console.error('❌ [MultiFrameDicomViewer] Enhanced services initialization failed:', err);
+            }
+        };
+
+        initializeEnhancedServices();
+    }, [enablePerformanceMonitoring, enableProgressiveLoading, enableIntelligentCaching]);
+    
+    // Enhanced slice navigation
+    const {
+        currentSlice,
+        totalSlices,
+        isAnimating: isNavigationAnimating,
+        goToSlice,
+        nextSlice,
+        previousSlice,
+        firstSlice,
+        lastSlice,
+        bindToElement,
+        updateConfig: updateNavigationConfig,
+        getKeyboardShortcuts
+    } = useFullSliceNavigation(loadedImages.length, (sliceIndex) => {
+        console.log(`🎮 [MultiFrameDicomViewer] Navigation: slice ${sliceIndex + 1}/${loadedImages.length}`);
+        
+        // Update the displayed image
+        if (loadedImages[sliceIndex]) {
+            currentImageRef.current = loadedImages[sliceIndex];
+            drawImage(loadedImages[sliceIndex]);
+        }
+    });
     
     // Build image URL properly with debugging
     const buildImageUrl = useCallback((filename: string | null | undefined) => {
@@ -228,10 +425,14 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
         });
     }, []);
     
-    // Draw image to canvas with transformations
+    // Draw image to canvas with transformations and performance tracking
     const drawImage = useCallback((img: HTMLImageElement) => {
         const canvas = canvasRef.current;
         if (!canvas || !img) return;
+
+        // Start performance tracking
+        const renderStart = performance.now();
+        const renderingMetrics = performanceMonitor.trackRenderingPerformance();
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
@@ -284,72 +485,97 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
         ctx.fillText(`Slice: ${currentSlice + 1}/${totalSlices}`, 10, 30);
         ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 50);
         
+        // Record rendering performance
+        const renderTime = performance.now() - renderStart;
+        renderingMetrics.frameTime = renderTime;
+        renderingMetrics.drawCalls = 1;
+        
+        performanceMonitor.recordRenderingMetrics(renderingMetrics);
+        
+        // Update local metrics for display
+        setRenderingMetrics({
+            frameTime: renderTime,
+            frameRate: 1000 / renderTime
+        });
+        
     }, [zoom, rotation, pan, currentSlice, totalSlices]);
     
-    // Load DICOM images using our backend API
+    // Load DICOM images using enhanced service with error handling
     const loadDicomImages = useCallback(async () => {
         if (!study?.patient_id || !study?.original_filename) {
-            setError('No DICOM file specified');
+            await handleError(new Error('No DICOM file specified'), {
+                studyUid: study?.study_uid,
+                context: 'missing_dicom_file'
+            });
             return;
         }
 
         setLoading(true);
-        setError(null);
+        clearError();
 
         try {
-            console.log('🔄 Loading DICOM slices from backend API...');
+            console.log('🔄 Loading DICOM slices with enhanced error handling...');
             console.log('Patient ID:', study.patient_id);
             console.log('Filename:', study.original_filename);
 
-            // Call our backend API to get all slices (without frame parameter)
-            const apiUrl = `http://localhost:8000/api/dicom/process/${study.patient_id}/${study.original_filename}?output_format=PNG&max_slices=96`;
-            console.log('🔄 API URL:', apiUrl);
+            // Initialize enhanced DICOM service
+            await enhancedDicomService.initialize();
 
-            const response = await fetch(apiUrl);
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            console.log('✅ API Response received:', result);
-
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to process DICOM file');
-            }
-
-            // Check if we have slices data
-            if (!result.slices || !Array.isArray(result.slices)) {
-                throw new Error('No slices data received from API');
-            }
-
-            console.log(`📊 Received ${result.slices.length} slices from API`);
-            console.log(`📊 Total slices available: ${result.total_slices_extracted || result.slices.length}`);
-
-            // Convert base64 images to Image objects
-            const imagePromises = result.slices.map((slice: any, index: number) => {
-                return new Promise<HTMLImageElement>((resolve, reject) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        console.log(`✅ Slice ${index + 1} loaded successfully`);
-                        resolve(img);
-                    };
-                    img.onerror = (error) => {
-                        console.error(`❌ Failed to load slice ${index + 1}:`, error);
-                        reject(new Error(`Failed to load slice ${index + 1}`));
-                    };
-                    // Set the base64 image data
-                    img.src = `data:image/png;base64,${slice.image_data}`;
-                });
+            // Try to load the study using the enhanced service with fallbacks
+            const studyResult = await enhancedDicomService.loadStudy(study, (progress) => {
+                console.log(`📊 Loading progress: ${progress.percentage.toFixed(1)}% (${progress.loaded}/${progress.total})`);
+                // You could update a progress bar here
             });
 
-            // Wait for all images to load
-            const loadedImageElements = await Promise.all(imagePromises);
-            console.log(`✅ All ${loadedImageElements.length} slices loaded successfully`);
+            const { images, errors } = studyResult;
+
+            if (images.length === 0) {
+                throw new Error('No images could be loaded from the study');
+            }
+
+            console.log(`✅ ${images.length} images loaded successfully`);
+            if (errors.length > 0) {
+                console.warn(`⚠️ ${errors.length} images failed to load:`, errors.map(e => e.message));
+            }
+
+            // Convert cornerstone images to HTML images for display
+            const loadedImageElements: HTMLImageElement[] = [];
+            
+            for (let i = 0; i < images.length; i++) {
+                try {
+                    const cornerstoneImage = images[i];
+                    
+                    // Create HTML image from cornerstone image
+                    const htmlImage = await convertCornerstoneToHtmlImage(cornerstoneImage);
+                    loadedImageElements.push(htmlImage);
+                    
+                } catch (error) {
+                    console.warn(`Failed to convert image ${i + 1}:`, error);
+                    
+                    // Try fallback: use backend API for this specific image
+                    try {
+                        const fallbackImage = await loadImageViaBackendApi(study, i);
+                        if (fallbackImage) {
+                            loadedImageElements.push(fallbackImage);
+                        }
+                    } catch (fallbackError) {
+                        console.error(`Fallback also failed for image ${i + 1}:`, fallbackError);
+                    }
+                }
+            }
+
+            if (loadedImageElements.length === 0) {
+                throw new Error('Failed to convert any images for display');
+            }
 
             // Store the loaded images
             setLoadedImages(loadedImageElements);
-            setTotalSlices(loadedImageElements.length);
-            setCurrentSlice(0);
+            
+            // Update navigation controller
+            updateNavigationConfig({
+                totalSlices: loadedImageElements.length,
+                currentSlice: 0
+            });
 
             // Draw the first image
             if (loadedImageElements.length > 0) {
@@ -361,38 +587,29 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
         } catch (error) {
             console.group('🔴 [MultiFrameDicomViewer] Error loading DICOM');
             console.error('Study object:', study);
-            console.error('Error object:', error);
-            console.error('Error type:', typeof error);
-            console.error('Error name:', (error as any)?.name);
-            console.error('Error message:', (error as any)?.message);
-            console.error('Error stack:', (error as any)?.stack);
+            console.error('Error details:', error);
             console.groupEnd();
 
-            let errorMessage = 'Unknown error occurred';
-            if (error instanceof Error) {
-                if (error.message.includes('Failed to process DICOM file')) {
-                    errorMessage = 'DICOM processing failed on server';
-                } else if (error.message.includes('No slices data received')) {
-                    errorMessage = 'No image data received from server';
-                } else if (error.message.includes('API request failed')) {
-                    errorMessage = 'Cannot connect to DICOM processing server';
-                } else {
-                    errorMessage = error.message;
-                }
-            }
-            
-            setError(`Failed to load DICOM: ${errorMessage}`);
+            // Use enhanced error handler
+            await handleError(error as Error, {
+                studyUid: study.study_uid,
+                patientId: study.patient_id,
+                filename: study.original_filename,
+                context: 'dicom_loading'
+            });
         } finally {
             setLoading(false);
         }
-    }, [study, buildImageUrl, tryLoadMedicalImage, drawImage]);
+    }, [study, handleError, clearError, drawImage]);
 
-    // Initialize cornerstone when component mounts
+    // Duplicate function removed - using the one defined earlier
+
+    // Initialize cornerstone and navigation when component mounts
     useEffect(() => {
         const canvas = canvasRef.current;
         if (canvas) {
             try {
-                console.log('🔄 Initializing cornerstone element');
+                console.log('🔄 Initializing cornerstone element and navigation');
                 
                 // Check if element is already enabled
                 let isEnabled = false;
@@ -410,18 +627,27 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                     console.log('✅ Cornerstone element already enabled');
                 }
                 
+                // Bind navigation controller to canvas
+                bindToElement(canvas);
+                console.log('✅ Navigation controller bound to canvas');
+                
                 // Load DICOM images after initialization
                 loadDicomImages();
                 
             } catch (error) {
                 console.error('❌ Error enabling cornerstone:', error);
-                setError('Failed to initialize DICOM viewer');
+                handleError(error as Error, {
+                    context: 'cornerstone_initialization'
+                });
             }
         }
 
         return () => {
             if (canvas) {
                 try {
+                    // Unbind navigation controller
+                    bindToElement(null);
+                    
                     // Only disable if element is enabled
                     let isEnabled = false;
                     try {
@@ -444,13 +670,13 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
             // Clear refs
             currentImageRef.current = null;
         };
-    }, [loadDicomImages]);
+    }, [loadDicomImages, bindToElement, handleError]);
 
     // Auto-scroll functionality for cine mode
     useEffect(() => {
         if (autoScroll && isPlaying && totalSlices > 1) {
             const interval = setInterval(() => {
-                setCurrentSlice(prev => (prev + 1) % totalSlices);
+                goToSlice((currentSlice + 1) % totalSlices);
             }, 1000 / playSpeed);
             return () => clearInterval(interval);
         }
@@ -484,10 +710,10 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
             
             if (e.deltaY > 0) {
                 // Scroll down - next slice
-                setCurrentSlice(prev => Math.min(totalSlices - 1, prev + 1));
+                nextSlice();
             } else {
                 // Scroll up - previous slice
-                setCurrentSlice(prev => Math.max(0, prev - 1));
+                previousSlice();
             }
         };
         
@@ -501,11 +727,11 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
             switch (e.key) {
                 case 'ArrowLeft':
                     e.preventDefault();
-                    setCurrentSlice(prev => Math.max(0, prev - 1));
+                    previousSlice();
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
-                    setCurrentSlice(prev => Math.min(totalSlices - 1, prev + 1));
+                    nextSlice();
                     break;
                 case ' ':
                     e.preventDefault();
@@ -514,11 +740,11 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                     break;
                 case 'Home':
                     e.preventDefault();
-                    setCurrentSlice(0);
+                    firstSlice();
                     break;
                 case 'End':
                     e.preventDefault();
-                    setCurrentSlice(totalSlices - 1);
+                    lastSlice();
                     break;
             }
         };
@@ -615,11 +841,13 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
         }
     }, []);
     
-    if (loading) {
+    if (loading || isRetrying) {
         return (
             <Box sx={{ p: 4, textAlign: 'center' }}>
                 <LinearProgress sx={{ mb: 2 }} />
-                <Typography>Loading DICOM data for {study.patient_id}...</Typography>
+                <Typography>
+                    {isRetrying ? 'Retrying DICOM load...' : 'Loading DICOM data'} for {study.patient_id}
+                </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     Study: {study.study_uid || study.original_filename}
                 </Typography>
@@ -628,80 +856,94 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                         Loaded {loadedImages.length} slice{loadedImages.length !== 1 ? 's' : ''}
                     </Typography>
                 )}
+                {isRetrying && (
+                    <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+                        Attempting automatic recovery...
+                    </Typography>
+                )}
             </Box>
         );
     }
     
-    if (error) {
+    if (viewerError) {
         return (
-            <Alert severity="error" sx={{ m: 2 }}>
-                <Typography variant="h6">Error Loading DICOM</Typography>
-                <Typography>{error}</Typography>
-                <Typography variant="body2" sx={{ mt: 1 }}>
-                    Study: {study.study_uid || study.original_filename}
-                </Typography>
-                <Typography variant="body2">
-                    Patient: {study.patient_id}
-                </Typography>
-                <Typography variant="body2">
-                    DICOM URL: {study.dicom_url || 'Not specified'}
-                </Typography>
-                <Typography variant="body2">
-                    Original Filename: {study.original_filename || 'Not specified'}
-                </Typography>
-                {study.image_urls && (
-                    <Typography variant="body2">
-                        Available URLs: {Array.isArray(study.image_urls) ? study.image_urls.length : 'Invalid format'}
-                    </Typography>
+            <Box sx={{ p: 2 }}>
+                <ErrorDisplay
+                    error={viewerError}
+                    recoveryOptions={recoveryOptions}
+                    onRetry={retry}
+                    onDismiss={dismiss}
+                    onRecoveryAction={executeRecoveryAction}
+                    showDetails={true}
+                />
+                
+                {/* Additional debug information for development */}
+                {process.env.NODE_ENV === 'development' && (
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                        <Typography variant="h6">Debug Information</Typography>
+                        <Typography variant="body2">
+                            Study: {study.study_uid || study.original_filename}
+                        </Typography>
+                        <Typography variant="body2">
+                            Patient: {study.patient_id}
+                        </Typography>
+                        <Typography variant="body2">
+                            DICOM URL: {study.dicom_url || 'Not specified'}
+                        </Typography>
+                        <Typography variant="body2">
+                            Original Filename: {study.original_filename || 'Not specified'}
+                        </Typography>
+                        {study.image_urls && (
+                            <Typography variant="body2">
+                                Available URLs: {Array.isArray(study.image_urls) ? study.image_urls.length : 'Invalid format'}
+                            </Typography>
+                        )}
+                        <Box sx={{ mt: 1 }}>
+                            <Button 
+                                variant="text" 
+                                size="small" 
+                                onClick={() => {
+                                    console.group('🔍 Debug Information');
+                                    console.log('Full study object:', study);
+                                    console.log('Study image_urls:', study.image_urls);
+                                    console.log('Study dicom_url:', study.dicom_url);
+                                    console.log('Study original_filename:', study.original_filename);
+                                    console.log('Current error:', viewerError);
+                                    console.groupEnd();
+                                }}
+                            >
+                                Log Debug Info
+                            </Button>
+                            <Button 
+                                variant="text" 
+                                size="small" 
+                                onClick={() => {
+                                    // Test URL accessibility
+                                    const urlSource = study.dicom_url || study.original_filename;
+                                    if (urlSource) {
+                                        const testUrl = urlSource.startsWith('http') ? urlSource : `http://localhost:8000${urlSource.startsWith('/') ? '' : '/uploads/'}${urlSource}`;
+                                        window.open(testUrl, '_blank');
+                                    }
+                                }}
+                            >
+                                Test URL
+                            </Button>
+                        </Box>
+                    </Alert>
                 )}
-                <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Button 
-                        variant="outlined" 
-                        size="small" 
-                        onClick={() => {
-                            setError(null);
-                            setLoading(true);
-                            setTimeout(() => loadDicomImages(), 100);
-                        }}
-                    >
-                        Retry Loading
-                    </Button>
-                    <Button 
-                        variant="text" 
-                        size="small" 
-                        onClick={() => {
-                            console.group('🔍 Debug Information');
-                            console.log('Full study object:', study);
-                            console.log('Study image_urls:', study.image_urls);
-                            console.log('Study dicom_url:', study.dicom_url);
-                            console.log('Study original_filename:', study.original_filename);
-                            console.log('Current error:', error);
-                            console.groupEnd();
-                        }}
-                    >
-                        Debug Info
-                    </Button>
-                    <Button 
-                        variant="text" 
-                        size="small" 
-                        onClick={() => {
-                            // Test URL accessibility
-                            const urlSource = study.dicom_url || study.original_filename;
-                            if (urlSource) {
-                                const testUrl = urlSource.startsWith('http') ? urlSource : `http://localhost:8000${urlSource.startsWith('/') ? '' : '/uploads/'}${urlSource}`;
-                                window.open(testUrl, '_blank');
-                            }
-                        }}
-                    >
-                        Test URL
-                    </Button>
-                </Box>
-            </Alert>
+            </Box>
         );
     }
     
     return (
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#000' }}>
+            {/* Performance Dashboard */}
+            {showPerformance && (
+                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000, bgcolor: 'background.paper', p: 1 }}>
+                    <PerformanceDashboard compact={true} />
+                </Box>
+            )}
+            
             {/* Header */}
             <Paper sx={{ p: 1, bgcolor: '#1a1a1a', color: '#00ff00' }}>
                 <Grid container alignItems="center" spacing={2}>
@@ -718,6 +960,13 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                             )}
                             {loadedImages.length > 0 && (
                                 <Chip label="Enhanced Navigation" size="small" color="info" />
+                            )}
+                            {renderingMetrics && (
+                                <Chip 
+                                    label={`${renderingMetrics.frameRate.toFixed(1)} FPS`} 
+                                    size="small" 
+                                    color={renderingMetrics.frameRate >= 45 ? "success" : "warning"} 
+                                />
                             )}
                         </Stack>
                     </Grid>
@@ -897,7 +1146,7 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                             <Tooltip title="Previous Slice">
                                 <span>
                                     <IconButton 
-                                        onClick={() => setCurrentSlice(prev => Math.max(0, prev - 1))} 
+                                        onClick={() => previousSlice()} 
                                         disabled={currentSlice === 0}
                                         size="small" 
                                         sx={{ color: '#00ff00' }}
@@ -923,7 +1172,7 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                             <Tooltip title="Next Slice">
                                 <span>
                                     <IconButton 
-                                        onClick={() => setCurrentSlice(prev => Math.min(totalSlices - 1, prev + 1))} 
+                                        onClick={() => nextSlice()} 
                                         disabled={currentSlice === totalSlices - 1}
                                         size="small" 
                                         sx={{ color: '#00ff00' }}
@@ -942,7 +1191,7 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                                     min={0}
                                     max={totalSlices - 1}
                                     step={1}
-                                    onChange={(_, value) => setCurrentSlice(value as number)}
+                                    onChange={(_, value) => goToSlice(value as number)}
                                     sx={{
                                         width: '100px',
                                         height: 4,
@@ -965,7 +1214,7 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                             {/* Play Speed */}
                             <Tooltip title="Play Speed">
                                 <IconButton size="small" sx={{ color: '#00ff00' }}>
-                                    <Speed />
+                                    <SpeedIcon />
                                 </IconButton>
                             </Tooltip>
                             <Slider
@@ -1003,7 +1252,7 @@ const MultiFrameDicomViewer: React.FC<MultiFrameDicomViewerProps> = ({ study, on
                     }}
                 />
                 
-                {!imageLoaded && !loading && !error && (
+                {!imageLoaded && !loading && (
                     <Box
                         sx={{
                             position: 'absolute',

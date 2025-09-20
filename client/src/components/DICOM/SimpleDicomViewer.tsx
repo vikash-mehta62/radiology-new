@@ -2,35 +2,68 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
     Box, Typography, Paper, IconButton, Tooltip, 
     Grid, Chip, Button, Alert, LinearProgress,
-    Stack, Slider
+    Stack, Slider, Snackbar
 } from '@mui/material';
 import {
     ZoomIn, ZoomOut, RotateLeft, RotateRight, 
-    RestartAlt, PlayArrow, Pause, SkipNext, SkipPrevious
+    RestartAlt, PlayArrow, Pause, SkipNext, SkipPrevious,
+    Speed, Memory, Error as ErrorIcon
 } from '@mui/icons-material';
 import type { Study } from '../../types';
+
+// Import enhanced services
+import { ErrorHandler } from '../../services/errorHandler';
+import { performanceMonitor, PerformanceMonitor } from '../../services/performanceMonitor';
+import { AdaptivePerformanceSystem } from '../../services/adaptivePerformanceSystem';
+import { ProgressiveLoadingSystem } from '../../services/progressiveLoadingSystem';
+import { MemoryManagementSystem } from '../../services/memoryManagementSystem';
 
 interface SimpleDicomViewerProps {
     study: Study;
     onError?: (error: string) => void;
+    initialState?: {
+        zoom?: number;
+        rotation?: number;
+        brightness?: number;
+        contrast?: number;
+        pan?: { x: number; y: number };
+        currentSlice?: number;
+    };
+    enablePerformanceMonitoring?: boolean;
+    enableAdaptivePerformance?: boolean;
+    enableProgressiveLoading?: boolean;
 }
 
-const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ study, onError }) => {
+const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ 
+    study, 
+    onError,
+    initialState,
+    enablePerformanceMonitoring = true,
+    enableAdaptivePerformance = true,
+    enableProgressiveLoading = false
+}) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    
+    // Enhanced services
+    const errorHandlerRef = useRef<ErrorHandler | null>(null);
+    const performanceMonitorRef = useRef<PerformanceMonitor | null>(null);
+    const adaptivePerformanceRef = useRef<AdaptivePerformanceSystem | null>(null);
+    const progressiveLoadingRef = useRef<ProgressiveLoadingSystem | null>(null);
+    const memoryManagerRef = useRef<MemoryManagementSystem | null>(null);
     
     // Core states
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [imageLoaded, setImageLoaded] = useState(false);
-    // console.log(study?.patient?.patient_id)
-    // Image manipulation
-    const [zoom, setZoom] = useState(1);
-    const [rotation, setRotation] = useState(0);
-    const [pan, setPan] = useState({ x: 0, y: 0 });
+    
+    // Image manipulation with initial state support
+    const [zoom, setZoom] = useState(initialState?.zoom || 1);
+    const [rotation, setRotation] = useState(initialState?.rotation || 0);
+    const [pan, setPan] = useState(initialState?.pan || { x: 0, y: 0 });
     
     // Multi-frame support
-    const [currentFrame, setCurrentFrame] = useState(0);
+    const [currentFrame, setCurrentFrame] = useState(initialState?.currentSlice || 0);
     const [totalFrames, setTotalFrames] = useState(1);
     const [isPlaying, setIsPlaying] = useState(false);
     const [playSpeed, setPlaySpeed] = useState(2);
@@ -41,46 +74,137 @@ const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ study, onError })
     const [imageWidth, setImageWidth] = useState(512);
     const [imageHeight, setImageHeight] = useState(512);
     
+    // Performance states
+    const [performanceMetrics, setPerformanceMetrics] = useState<any>(null);
+    const [showPerformanceAlert, setShowPerformanceAlert] = useState(false);
+    const [adaptiveQuality, setAdaptiveQuality] = useState<'low' | 'medium' | 'high'>('medium');
+    
+    // Initialize enhanced services
+    useEffect(() => {
+        const initializeServices = async () => {
+            try {
+                // Initialize error handler
+                errorHandlerRef.current = ErrorHandler.getInstance();
+                errorHandlerRef.current.onError((error) => {
+                    console.error('🔴 [SimpleDicomViewer] Error:', error);
+                    setError(error.message);
+                    if (onError) {
+                        onError(error.message);
+                    }
+                });
+
+                // Initialize performance monitor
+                if (enablePerformanceMonitoring) {
+                    performanceMonitorRef.current = PerformanceMonitor.getInstance();
+                    // Performance monitoring is now active
+                }
+
+                // Initialize adaptive performance
+                if (enableAdaptivePerformance) {
+                    adaptivePerformanceRef.current = new AdaptivePerformanceSystem();
+                    
+                    // Set up performance monitoring
+                    const checkPerformance = () => {
+                        const metrics = performanceMonitorRef.current?.getCurrentMetrics();
+                        if (metrics) {
+                            setPerformanceMetrics(metrics);
+                            
+                            // Adaptive quality adjustment
+                            const avgRenderTime = metrics.renderingTime || 0;
+                            if (avgRenderTime > 100) {
+                                setAdaptiveQuality('low');
+                                setShowPerformanceAlert(true);
+                            } else if (avgRenderTime > 50) {
+                                setAdaptiveQuality('medium');
+                            } else {
+                                setAdaptiveQuality('high');
+                            }
+                        }
+                    };
+
+                    const performanceInterval = setInterval(checkPerformance, 5000);
+                    return () => clearInterval(performanceInterval);
+                }
+
+                // Initialize progressive loading
+                if (enableProgressiveLoading) {
+                    progressiveLoadingRef.current = new ProgressiveLoadingSystem();
+                }
+
+                // Initialize memory manager
+                memoryManagerRef.current = new MemoryManagementSystem();
+
+                console.log('✅ [SimpleDicomViewer] Enhanced services initialized');
+            } catch (err) {
+                console.error('❌ [SimpleDicomViewer] Service initialization failed:', err);
+            }
+        };
+
+        initializeServices();
+    }, [enablePerformanceMonitoring, enableAdaptivePerformance, enableProgressiveLoading, onError]);
+
+    // Enhanced error handling
+    const handleError = useCallback((error: Error | string, context?: string) => {
+        const errorMessage = typeof error === 'string' ? error : error.message;
+        
+        if (errorHandlerRef.current) {
+            errorHandlerRef.current.handleError(
+                typeof error === 'string' ? new Error(error) : error,
+                { viewerMode: 'simple-viewer', studyUid: study.study_uid }
+            );
+        } else {
+            setError(errorMessage);
+            if (onError) {
+                onError(errorMessage);
+            }
+        }
+    }, [onError, study.study_uid]);
+
     // Build image URL
-  const buildImageUrl = useCallback(
-  (filename: string | null | undefined) => {
-    if (!filename || typeof filename !== "string") {
-      return null;
-    }
+    const buildImageUrl = useCallback(
+        (filename: string | null | undefined) => {
+            if (!filename || typeof filename !== "string") {
+                return null;
+            }
 
-    const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+            const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
-    if (filename.startsWith("http://") || filename.startsWith("https://")) {
-      return filename;
-    } else if (
-      study &&
-      (filename.startsWith(String((study as any)?.patient?.patient_id)) ||
-        filename.startsWith("/"))
-    ) {
-      return `${apiUrl}${filename}`;
-    } else {
-      return `${apiUrl}/${(study as any)?.patient?.patient_id || ""}/${filename}`;
-    }
-  },
-  [study]
-);
+            if (filename.startsWith("http://") || filename.startsWith("https://")) {
+                return filename;
+            } else if (
+                study &&
+                (filename.startsWith(String((study as any)?.patient?.patient_id)) ||
+                    filename.startsWith("/"))
+            ) {
+                return `${apiUrl}${filename}`;
+            } else {
+                return `${apiUrl}/${(study as any)?.patient?.patient_id || ""}/${filename}`;
+            }
+        },
+        [study]
+    );
 
     
-    // Load DICOM using backend processing
+    // Enhanced DICOM loading with performance monitoring
     const loadDicomImage = useCallback(async () => {
         if (!study?.dicom_url && !study?.original_filename) {
-            setError('No DICOM file specified');
+            handleError('No DICOM file specified', 'image-loading');
             return;
         }
 
+        const loadStartTime = performance.now();
         setLoading(true);
         setError(null);
+        
+        // Performance monitoring (simplified)
         
         // Add timeout to prevent stuck loading
         const loadingTimeout = setTimeout(() => {
             console.warn('⚠️ Loading timeout - forcing loading state to false');
             setLoading(false);
-            setError('Loading timeout - please try again');
+            handleError('Loading timeout - please try again', 'timeout');
+            
+            // Performance monitoring (simplified)
         }, 15000); // 15 second timeout
 
         try {
@@ -91,7 +215,7 @@ const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ study, onError })
                 throw new Error('Could not build image URL');
             }
 
-            console.log('🔄 Loading DICOM via backend processing:', imageUrl);
+            console.log('🔄 [SimpleDicomViewer] Loading DICOM via backend processing:', imageUrl);
             
             // Extract patient ID and filename for backend processing
             const pathParts = imageUrl.split('/');
@@ -209,12 +333,16 @@ const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ study, onError })
         }
     }, [study, buildImageUrl]);
     
-    // Draw image to canvas with transformations
+    // Enhanced draw image to canvas with performance monitoring
     const drawImageToCanvas = useCallback(() => {
         if (!canvasRef.current || !imageData) {
             console.log('⚠️ Cannot draw - canvas or imageData not available');
             return;
         }
+
+        const renderStartTime = performance.now();
+        
+        // Start performance monitoring (simplified)
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
@@ -287,11 +415,24 @@ const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ study, onError })
             ctx.fillText(`Frame: ${currentFrame + 1}/${totalFrames}`, 10, 30);
             ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 50);
             
+            // Show adaptive quality indicator
+            if (enableAdaptivePerformance) {
+                ctx.fillStyle = adaptiveQuality === 'high' ? '#00ff00' : 
+                               adaptiveQuality === 'medium' ? '#ffff00' : '#ff0000';
+                ctx.fillText(`Quality: ${adaptiveQuality.toUpperCase()}`, 10, 70);
+            }
+            
+            // Performance monitoring completion
+            const renderTime = performance.now() - renderStartTime;
+            // Performance monitoring (simplified)
+            
         } catch (error) {
             console.error('❌ Error drawing to canvas:', error);
+            handleError(error instanceof Error ? error : new Error('Canvas drawing failed'), 'canvas-render');
         }
         
-    }, [imageData, zoom, rotation, pan, currentFrame, totalFrames, imageWidth, imageHeight]);
+    }, [imageData, zoom, rotation, pan, currentFrame, totalFrames, imageWidth, imageHeight, 
+        enableAdaptivePerformance, adaptiveQuality, handleError]);
     
     // Load frame for multi-frame DICOMs
     const loadFrame = useCallback(async (frameIndex: number) => {
@@ -597,6 +738,49 @@ const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ study, onError })
                 </Stack>
             </Paper>
             
+            {/* Performance Alert */}
+            {showPerformanceAlert && (
+                <Alert 
+                    severity="warning" 
+                    onClose={() => setShowPerformanceAlert(false)}
+                    sx={{ mx: 1, mb: 1 }}
+                >
+                    Performance degraded - switched to {adaptiveQuality} quality mode
+                </Alert>
+            )}
+
+            {/* Performance Metrics (Debug Mode) */}
+            {enablePerformanceMonitoring && performanceMetrics && (
+                <Paper sx={{ mx: 1, mb: 1, p: 1, bgcolor: 'rgba(0, 0, 0, 0.8)' }}>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                        <Tooltip title="Render Time">
+                            <Chip
+                                icon={<Speed />}
+                                label={`${performanceMetrics.render_time?.average?.toFixed(1) || 0}ms`}
+                                size="small"
+                                color={performanceMetrics.render_time?.average > 50 ? 'error' : 'success'}
+                            />
+                        </Tooltip>
+                        <Tooltip title="Memory Usage">
+                            <Chip
+                                icon={<Memory />}
+                                label={`${Math.round(performanceMetrics.memory_usage?.current || 0)}MB`}
+                                size="small"
+                                color="info"
+                            />
+                        </Tooltip>
+                        <Tooltip title="Quality Mode">
+                            <Chip
+                                label={adaptiveQuality.toUpperCase()}
+                                size="small"
+                                color={adaptiveQuality === 'high' ? 'success' : 
+                                       adaptiveQuality === 'medium' ? 'warning' : 'error'}
+                            />
+                        </Tooltip>
+                    </Stack>
+                </Paper>
+            )}
+
             {/* Canvas */}
             <Box 
                 ref={containerRef}
@@ -633,6 +817,33 @@ const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({ study, onError })
                     </Box>
                 )}
             </Box>
+
+            {/* Error Recovery Snackbar */}
+            <Snackbar
+                open={!!error}
+                autoHideDuration={6000}
+                onClose={() => setError(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert 
+                    severity="error" 
+                    onClose={() => setError(null)}
+                    action={
+                        <Button 
+                            color="inherit" 
+                            size="small" 
+                            onClick={() => {
+                                setError(null);
+                                loadDicomImage();
+                            }}
+                        >
+                            RETRY
+                        </Button>
+                    }
+                >
+                    {error}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };
