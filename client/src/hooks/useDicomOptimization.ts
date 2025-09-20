@@ -137,12 +137,12 @@ export const useDicomOptimization = (initialConfig?: Partial<DicomOptimizationCo
       if (state.config.enableProgressiveLoading) {
         // Load thumbnail first, then full image
         try {
-          const imageId = `wadouri:http://localhost:8000/api/dicom/${patientId}/${filename}`;
+          const imageId = `wadouri:http://localhost:8000/dicom/${patientId}/${filename}`;
           const thumbnail = await enhancedDicomService.loadImage(imageId, { priority: 'high' });
           // Return thumbnail immediately for quick preview
           setTimeout(async () => {
             try {
-              const imageId = `wadouri:http://localhost:8000/api/dicom/${patientId}/${filename}`;
+              const imageId = `wadouri:http://localhost:8000/dicom/${patientId}/${filename}`;
               const fullImage = await enhancedDicomService.loadImage(imageId, {
                 priority: 'medium',
                 quality: 'high'
@@ -164,7 +164,7 @@ export const useDicomOptimization = (initialConfig?: Partial<DicomOptimizationCo
       }
 
       // Regular loading
-      const imageId = `wadouri:http://localhost:8000/api/dicom/${patientId}/${filename}`;
+      const imageId = `wadouri:http://localhost:8000/dicom/${patientId}/${filename}`;
       result = await enhancedDicomService.loadImage(imageId, {
         priority: 'medium',
         quality: 'high'
@@ -193,7 +193,7 @@ export const useDicomOptimization = (initialConfig?: Partial<DicomOptimizationCo
 
     try {
       const imageIds = images.map(img => 
-        `wadouri:http://localhost:8000/api/dicom/${img.patientId}/${img.filename}`
+        `wadouri:http://localhost:8000/dicom/${img.patientId}/${img.filename}`
       );
       await enhancedDicomService.preloadImages(0, imageIds, 3);
     } catch (error) {

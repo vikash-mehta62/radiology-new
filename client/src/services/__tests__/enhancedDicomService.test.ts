@@ -199,7 +199,7 @@ describe('EnhancedDicomService', () => {
       
       expect(result).toBeDefined();
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/dicom/process/'),
+        expect.stringContaining('/dicom/process/'),
         expect.any(Object)
       );
     });

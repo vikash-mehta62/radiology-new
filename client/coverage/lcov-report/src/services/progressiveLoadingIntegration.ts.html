@@ -1084,7 +1084,7 @@ export class ProgressiveLoadingIntegration {
     // Fallback to regular DICOM service loading
 <span class="cstat-no" title="statement not covered" >    try {</span>
       // This is a simplified fallback - in reality, you'd integrate with your existing DICOM loading
-      const response = <span class="cstat-no" title="statement not covered" >await fetch(`/api/dicom/image/${imageId}`);</span>
+      const response = <span class="cstat-no" title="statement not covered" >await fetch(`/dicom/image/${imageId}`);</span>
       const arrayBuffer = <span class="cstat-no" title="statement not covered" >await response.arrayBuffer();</span>
       
       // Convert to ImageData (simplified - real implementation would use DICOM parsing)

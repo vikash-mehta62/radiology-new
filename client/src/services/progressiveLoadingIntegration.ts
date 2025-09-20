@@ -273,7 +273,7 @@ export class ProgressiveLoadingIntegration {
     // Fallback to regular DICOM service loading
     try {
       // This is a simplified fallback - in reality, you'd integrate with your existing DICOM loading
-      const response = await fetch(`/api/dicom/image/${imageId}`);
+      const response = await fetch(`/dicom/image/${imageId}`);
       const arrayBuffer = await response.arrayBuffer();
       
       // Convert to ImageData (simplified - real implementation would use DICOM parsing)

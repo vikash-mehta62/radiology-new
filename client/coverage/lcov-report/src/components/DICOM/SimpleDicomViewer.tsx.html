@@ -2024,7 +2024,7 @@ const SimpleDicomViewer: React.FC&lt;SimpleDicomViewerProps&gt; = <span class="c
             const patientId = <span class="cstat-no" title="statement not covered" >pathParts[pathParts.length - 2];</span>
             
             // Use backend DICOM processing endpoint - request first frame specifically
-            const processUrl = <span class="cstat-no" title="statement not covered" >`http://localhost:8000/api/dicom/process/${patientId}/${filename}?output_format=PNG&amp;max_slices=10&amp;frame=0`;</span>
+            const processUrl = <span class="cstat-no" title="statement not covered" >`http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&amp;max_slices=10&amp;frame=0`;</span>
             
             const response = <span class="cstat-no" title="statement not covered" >await fetch(processUrl);</span>
 <span class="cstat-no" title="statement not covered" >            if (!response.ok) {</span>

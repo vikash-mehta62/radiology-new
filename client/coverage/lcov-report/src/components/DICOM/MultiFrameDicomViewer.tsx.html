@@ -3462,7 +3462,7 @@ const MultiFrameDicomViewer: React.FC&lt;MultiFrameDicomViewerProps&gt; = <span 
     // Fallback method to load image via backend API
     const loadImageViaBackendApi = <span class="cstat-no" title="statement not covered" >useCallback(<span class="fstat-no" title="function not covered" >as</span>ync (study: Study, frameIndex: number): Promise&lt;HTMLImageElement | null&gt; =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >        try {</span>
-            const apiUrl = <span class="cstat-no" title="statement not covered" >`http://localhost:8000/api/dicom/process/${study.patient_id}/${study.original_filename}?output_format=PNG&amp;frame=${frameIndex}`;</span>
+            const apiUrl = <span class="cstat-no" title="statement not covered" >`http://localhost:8000/dicom/process/${study.patient_id}/${study.original_filename}?output_format=PNG&amp;frame=${frameIndex}`;</span>
             
             const response = <span class="cstat-no" title="statement not covered" >await fetch(apiUrl);</span>
 <span class="cstat-no" title="statement not covered" >            if (!response.ok) {</span>

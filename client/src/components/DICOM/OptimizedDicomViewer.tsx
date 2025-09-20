@@ -199,7 +199,7 @@ const OptimizedDicomViewer: React.FC<OptimizedDicomViewerProps> = ({
     try {
       // Preload different enhancement versions (simplified)
       const imageIds = enhancements.map(enhancement => 
-        `wadouri:http://localhost:8000/api/dicom/${patientId}/${filename}?enhancement=${enhancement}`
+        `wadouri:http://localhost:8000/dicom/${patientId}/${filename}?enhancement=${enhancement}`
       );
       await enhancedDicomService.preloadImages(0, imageIds, 2);
     } catch (error) {

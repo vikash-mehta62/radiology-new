@@ -55,7 +55,7 @@ const extractDicomSlices = (filePath, outputFormat = 'PNG', maxSlices = 10) => {
   });
 };
 
-// GET /api/dicom/process/:patient_id/:filename - Extract DICOM slices
+// GET /dicom/process/:patient_id/:filename - Extract DICOM slices
 router.get('/process/:patient_id/:filename', async (req, res) => {
   try {
     const { patient_id, filename } = req.params;
@@ -132,7 +132,7 @@ router.get('/process/:patient_id/:filename', async (req, res) => {
   }
 });
 
-// GET /api/dicom/info/:patient_id/:filename - Get DICOM metadata
+// GET /dicom/info/:patient_id/:filename - Get DICOM metadata
 router.get('/info/:patient_id/:filename', async (req, res) => {
   try {
     const { patient_id, filename } = req.params;

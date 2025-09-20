@@ -764,12 +764,12 @@ describe('Performance and Load Testing Suite', () => {
         
         const result = await benchmark.run(async () => {
           // Simulate DICOM image loading under bandwidth constraints
-          const response = await fetch('/api/dicom/image');
+          const response = await fetch('/dicom/image');
           const data = await response.json();
           expect(data.bandwidth).toBe(bandwidth.name);
           
           // Simulate progressive loading
-          const imageResponse = await fetch('/api/dicom/pixels');
+          const imageResponse = await fetch('/dicom/pixels');
           const imageData = await imageResponse.arrayBuffer();
           expect(imageData.byteLength).toBe(1024 * 1024);
         });
@@ -880,7 +880,7 @@ describe('Performance and Load Testing Suite', () => {
       const result = await benchmark.run(async () => {
         // Simulate loading multiple DICOM slices concurrently
         const concurrentRequests = Array.from({ length: 20 }, (_, i) => 
-          fetch(`/api/dicom/slice/${i}`)
+          fetch(`/dicom/slice/${i}`)
             .then(response => response.json())
         );
         
@@ -940,7 +940,7 @@ describe('Performance and Load Testing Suite', () => {
         // Simulate loading slices with jittery network
         for (let i = 0; i < 30; i++) {
           try {
-            const response = await fetch(`/api/dicom/slice/${i}`);
+            const response = await fetch(`/dicom/slice/${i}`);
             const data = await response.json();
             
             totalJitter += Math.abs(data.jitter);

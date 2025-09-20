@@ -753,7 +753,7 @@ import { MockDicomDataGenerator } from '../services/__tests__/testUtils';
 // Mock API handlers
 const handlers = <span class="cstat-no" title="statement not covered" >[</span>
   // DICOM processing endpoint
-  rest.get('/api/dicom/process/:patientId/:filename', <span class="fstat-no" title="function not covered" >(r</span>eq, res, ctx) =&gt; {
+  rest.get('/dicom/process/:patientId/:filename', <span class="fstat-no" title="function not covered" >(r</span>eq, res, ctx) =&gt; {
     const { patientId, filename } = <span class="cstat-no" title="statement not covered" >req.params;</span>
     const frame = <span class="cstat-no" title="statement not covered" >req.url.searchParams.get('frame') || '0';</span>
     const outputFormat = <span class="cstat-no" title="statement not covered" >req.url.searchParams.get('output_format') || 'PNG';</span>

@@ -223,7 +223,7 @@ const SimpleDicomViewer: React.FC<SimpleDicomViewerProps> = ({
             const patientId = pathParts[pathParts.length - 2];
             
             // Use backend DICOM processing endpoint - request first frame specifically
-            const processUrl = `http://localhost:8000/api/dicom/process/${patientId}/${filename}?output_format=PNG&max_slices=10&frame=0`;
+            const processUrl = `http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&max_slices=10&frame=0`;
             
             const response = await fetch(processUrl);
             if (!response.ok) {

@@ -139,7 +139,7 @@ describe('Comprehensive Performance Testing Suite', () => {
             async () => {
               // Simulate loading multiple DICOM slices
               const requests = Array.from({ length: 5 }, () => 
-                fetch('/api/dicom/slice').then(r => r.json())
+                fetch('/dicom/slice').then(r => r.json())
               );
               
               const results = await Promise.all(requests);

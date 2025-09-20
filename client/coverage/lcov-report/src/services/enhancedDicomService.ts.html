@@ -3004,7 +3004,7 @@ class EnhancedDicomService {
       const patientId = urlParts[urlParts.length - 2];
       const filename = urlParts[urlParts.length - 1];
 &nbsp;
-      const apiUrl = `http://localhost:8000/api/dicom/process/${patientId}/${filename}?output_format=PNG&amp;frame=0`;
+      const apiUrl = `http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&amp;frame=0`;
       
       const response = await fetch(apiUrl, {
         signal: this.createTimeoutSignal(options.timeout || 60000)

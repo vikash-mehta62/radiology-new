@@ -10,7 +10,7 @@ import { MockDicomDataGenerator } from '../services/__tests__/testUtils';
 // Mock API handlers
 const handlers = [
   // DICOM processing endpoint
-  http.get('/api/dicom/process/:patientId/:filename', (req, res, ctx) => {
+  http.get('/dicom/process/:patientId/:filename', (req, res, ctx) => {
     const { patientId, filename } = req.params;
     const frame = req.url.searchParams.get('frame') || '0';
     const outputFormat = req.url.searchParams.get('output_format') || 'PNG';
