@@ -87,6 +87,18 @@ const generateStudyUID = (patientId, filename) => {
   return `1.2.840.113619.2.5.${hash}`;
 };
 
+// Helper function to load studies from JSON file (fallback when MongoDB is not available)
+const loadStudiesFromJSON = async () => {
+  try {
+    const jsonPath = path.join(__dirname, '..', 'data', 'studies.json');
+    const data = await fs.readFile(jsonPath, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error loading studies from JSON:', error);
+    return [];
+  }
+};
+
 // GET /studies - Get all studies with pagination
 router.get('/', async (req, res) => {
   try {
@@ -97,45 +109,83 @@ router.get('/', async (req, res) => {
       search
     } = req.query;
 
-    let query = { active: true };
-    
-    if (patient_id) {
-      query.patient_id = patient_id;
-    }
-    
-    if (search) {
-      query.$or = [
-        { study_description: { $regex: search, $options: 'i' } },
-        { original_filename: { $regex: search, $options: 'i' } },
-        { modality: { $regex: search, $options: 'i' } }
-      ];
-    }
+    let studies = [];
+    let total = 0;
 
-    const [studies, total] = await Promise.all([
-      Study.find(query)
-        .skip(parseInt(skip))
-        .limit(parseInt(limit))
-        .sort({ upload_time: -1 }),
-      Study.countDocuments(query)
-    ]);
+    try {
+      // Try MongoDB first
+      let query = { active: true };
+      
+      if (patient_id) {
+        query.patient_id = patient_id;
+      }
+      
+      if (search) {
+        query.$or = [
+          { study_description: { $regex: search, $options: 'i' } },
+          { original_filename: { $regex: search, $options: 'i' } },
+          { modality: { $regex: search, $options: 'i' } }
+        ];
+      }
 
-    // Manually populate patient data since patient_id is a string, not ObjectId
-    const studiesWithPatients = await Promise.all(
-      studies.map(async (study) => {
-        const patient = await Patient.findOne({ patient_id: study.patient_id, active: true });
-        return {
-          ...study.toObject(),
-          patient: patient ? {
-            first_name: patient.first_name,
-            last_name: patient.last_name,
-            patient_id: patient.patient_id
-          } : null
-        };
-      })
-    );
+      const [mongoStudies, mongoTotal] = await Promise.all([
+        Study.find(query)
+          .skip(parseInt(skip))
+          .limit(parseInt(limit))
+          .sort({ upload_time: -1 }),
+        Study.countDocuments(query)
+      ]);
+
+      // Manually populate patient data since patient_id is a string, not ObjectId
+      const studiesWithPatients = await Promise.all(
+        mongoStudies.map(async (study) => {
+          const patient = await Patient.findOne({ patient_id: study.patient_id, active: true });
+          return {
+            ...study.toObject(),
+            patient: patient ? {
+              first_name: patient.first_name,
+              last_name: patient.last_name,
+              patient_id: patient.patient_id
+            } : null
+          };
+        })
+      );
+
+      studies = studiesWithPatients;
+      total = mongoTotal;
+
+    } catch (mongoError) {
+      console.log('MongoDB not available, using JSON fallback:', mongoError.message);
+      
+      // Fallback to JSON file
+      const jsonStudies = await loadStudiesFromJSON();
+      
+      // Apply filters
+      let filteredStudies = jsonStudies;
+      
+      if (patient_id) {
+        filteredStudies = filteredStudies.filter(study => study.patient_id === patient_id);
+      }
+      
+      if (search) {
+        const searchLower = search.toLowerCase();
+        filteredStudies = filteredStudies.filter(study => 
+          (study.study_description && study.study_description.toLowerCase().includes(searchLower)) ||
+          (study.original_filename && study.original_filename.toLowerCase().includes(searchLower)) ||
+          (study.modality && study.modality.toLowerCase().includes(searchLower))
+        );
+      }
+      
+      total = filteredStudies.length;
+      
+      // Apply pagination
+      const startIndex = parseInt(skip);
+      const endIndex = startIndex + parseInt(limit);
+      studies = filteredStudies.slice(startIndex, endIndex);
+    }
 
     res.json({
-      studies: studiesWithPatients,
+      studies,
       total,
       limit: parseInt(limit),
       skip: parseInt(skip)
@@ -151,63 +201,66 @@ router.get('/', async (req, res) => {
 router.get('/:study_uid', async (req, res) => {
   try {
     const { study_uid } = req.params;
+    let study = null;
     
-    // Try exact match first
-    let study = await Study.findOne({ 
-      study_uid: study_uid,
-      active: true 
-    });
-
-    // If not found, try partial match (like Python backend)
-    if (!study) {
-      study = await Study.findOne({
-        study_uid: { $regex: study_uid, $options: 'i' },
-        active: true
-      });
-    }
-
-    // Manually populate patient data if study found
-    if (study) {
-      const patient = await Patient.findOne({ 
-        patient_id: study.patient_id, 
+    try {
+      // Try MongoDB first
+      study = await Study.findOne({ 
+        study_uid: study_uid,
         active: true 
       });
+
+      // If not found, try partial match (like Python backend)
+      if (!study) {
+        study = await Study.findOne({
+          study_uid: { $regex: study_uid, $options: 'i' },
+          active: true
+        });
+      }
+
+      // Manually populate patient data if study found
+      if (study) {
+        const patient = await Patient.findOne({ 
+          patient_id: study.patient_id, 
+          active: true 
+        });
+        
+        const studyWithPatient = {
+          ...study.toObject(),
+          patient: patient ? {
+            first_name: patient.first_name,
+            last_name: patient.last_name,
+            patient_id: patient.patient_id
+          } : null
+        };
+        
+        return res.json(studyWithPatient);
+      }
+
+    } catch (mongoError) {
+      console.log('MongoDB not available, using JSON fallback:', mongoError.message);
       
-      const studyWithPatient = {
-        ...study.toObject(),
-        patient: patient ? {
-          first_name: patient.first_name,
-          last_name: patient.last_name,
-          patient_id: patient.patient_id
-        } : null
-      };
+      // Fallback to JSON file
+      const jsonStudies = await loadStudiesFromJSON();
       
-      return res.json(studyWithPatient);
+      // Try exact match first
+      study = jsonStudies.find(s => s.study_uid === study_uid);
+      
+      // If not found, try partial match
+      if (!study) {
+        study = jsonStudies.find(s => s.study_uid.includes(study_uid));
+      }
+      
+      if (study) {
+        return res.json(study);
+      }
     }
 
-    // If still not found, return mock data (like Python backend)
-    if (!study) {
-      return res.json({
-        study_uid: study_uid,
-        patient_id: "MOCK_PATIENT",
-        study_description: "Mock Study for Development",
-        study_date: new Date().toISOString().split('T')[0],
-        modality: "CT",
-        original_filename: "mock_study.dcm",
-        upload_time: new Date().toISOString(),
-        file_url: `/uploads/mock/${study_uid}.dcm`,
-        processing_status: "completed",
-        dicom_metadata: {
-          patient_name: "Mock^Patient",
-          study_instance_uid: study_uid,
-          modality: "CT",
-          study_description: "Mock Study for Development"
-        },
-        mock: true
-      });
-    }
-
-    res.json(study);
+    // If still not found, return 404
+    res.status(404).json({
+      error: 'Study not found',
+      detail: `Study with UID ${study_uid} not found`
+    });
 
   } catch (error) {
     console.error('Error fetching study:', error);

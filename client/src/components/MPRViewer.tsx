@@ -4,7 +4,17 @@
  */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Box, Grid, Paper, Typography, Slider, FormControl, InputLabel, Select, MenuItem, IconButton, Tooltip } from '@mui/material';
+import Box from '@mui/material/Box';
+import Grid from '@mui/material/Grid';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
+import Slider from '@mui/material/Slider';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import { Sync, SyncDisabled, CenterFocusStrong, Refresh, Settings } from '@mui/icons-material';
 import { VolumeData } from '../services/volumeRenderingEngine';
 

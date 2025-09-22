@@ -57,11 +57,13 @@ export interface AIProcessingResult {
 }
 
 export interface DetectionResult {
+  id?: string;
   boundingBox: { x: number; y: number; width: number; height: number };
   confidence: number;
   class: string;
   description: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
+  contour?: Array<{ x: number; y: number }>;
 }
 
 export interface AIAnalysisResult {

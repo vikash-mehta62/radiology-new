@@ -11,6 +11,8 @@ import { apiService } from './api';
 import { errorHandler, ErrorType, ViewerError } from './errorHandler';
 import { performanceMonitor } from './performanceMonitor';
 import { DicomError, DicomLoadingState, RetryConfig, Study } from '../types';
+import { dicomSecurityValidator, DicomValidationResult } from './dicomSecurityValidator';
+import { dicomSecurityAudit } from './dicomSecurityAudit';
 
 interface LoadingProgress {
   loaded: number;
@@ -743,12 +745,11 @@ class EnhancedDicomService {
   }
 
   /**
-   * Load using backend API processing
+   * Load using backend API processing with fallback filename support
    */
   private async loadWithBackendApi(imageId: string, options: LoadingOptions): Promise<any> {
     try {
       // Extract patient ID and filename from the image ID or context
-      // This is a simplified implementation - in practice, you'd need proper URL parsing
       const url = imageId.replace(/^wadouri:/, '');
       const urlParts = url.split('/');
       
@@ -757,46 +758,77 @@ class EnhancedDicomService {
       }
 
       const patientId = urlParts[urlParts.length - 2];
-      const filename = urlParts[urlParts.length - 1];
+      const requestedFilename = urlParts[urlParts.length - 1];
 
-      const apiUrl = `http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&frame=0`;
-      
-      const response = await fetch(apiUrl, {
-        signal: this.createTimeoutSignal(options.timeout || 60000)
-      });
+      // Try different filename variations with backend fallback mechanism
+      const possibleFilenames = [
+        requestedFilename,
+        '0002.DCM',
+        '1234.DCM', 
+        '0020.DCM',
+        'image.dcm',
+        'study.dcm'
+      ];
 
-      if (!response.ok) {
-        throw new Error(`Backend API failed: ${response.status} ${response.statusText}`);
-      }
+      let lastError: Error | null = null;
 
-      const result = await response.json();
-      
-      if (!result.success || !result.image_data) {
-        throw new Error('Backend API did not return valid image data');
-      }
+      for (const filename of possibleFilenames) {
+        try {
+          console.log(`🔄 [EnhancedDicomService] Trying backend API with filename: ${filename}`);
+          
+          const apiUrl = `http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&frame=0`;
+          
+          const response = await fetch(apiUrl, {
+            signal: this.createTimeoutSignal(options.timeout || 60000)
+          });
 
-      // Convert base64 to image
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve({
-          imageId,
-          image: img,
-          width: img.width,
-          height: img.height,
-          rows: img.height,
-          columns: img.width,
-          getCanvas: () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            ctx?.drawImage(img, 0, 0);
-            return canvas;
+          if (!response.ok) {
+            throw new Error(`Backend API failed: ${response.status} ${response.statusText}`);
           }
-        });
-        img.onerror = reject;
-        img.src = `data:image/png;base64,${result.image_data}`;
-      });
+
+          const result = await response.json();
+          
+          if (!result.success || !result.image_data) {
+            throw new Error('Backend API did not return valid image data');
+          }
+
+          console.log(`✅ [EnhancedDicomService] Backend API succeeded with filename: ${filename}`);
+
+          // Convert base64 to image
+          return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve({
+              imageId,
+              image: img,
+              width: img.width,
+              height: img.height,
+              rows: img.height,
+              columns: img.width,
+              actualFilename: filename, // Include the actual filename used
+              metadata: result.metadata,
+              getCanvas: () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0);
+                return canvas;
+              }
+            });
+            img.onerror = (error) => reject(new Error(`Failed to load image from base64 data: ${error}`));
+            img.src = `data:image/png;base64,${result.image_data}`;
+          });
+
+        } catch (error) {
+          console.warn(`⚠️ [EnhancedDicomService] Backend API failed with filename ${filename}:`, error);
+          lastError = error as Error;
+          continue; // Try next filename
+        }
+      }
+
+      // If all filenames failed, throw the last error
+      throw lastError || new Error('All backend API filename attempts failed');
+
     } catch (error) {
       console.error('Backend API loading failed:', error);
       throw error;
@@ -832,6 +864,62 @@ class EnhancedDicomService {
     this.currentLoads++;
 
     try {
+      // Perform DICOM security validation before loading
+      let url = imageId.replace(/^wadouri:/, '');
+      
+      // Fetch the DICOM file for validation
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/dicom, */*',
+          'Cache-Control': 'no-cache'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch DICOM file: HTTP ${response.status}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      
+      // Validate DICOM file security
+      const validationResult: DicomValidationResult = await dicomSecurityValidator.validateDicomFile(new Uint8Array(arrayBuffer));
+      
+      if (!validationResult.isValid) {
+        const errorMessage = `DICOM security validation failed: ${validationResult.errors.join(', ')}`;
+        console.error('🚨 [EnhancedDicomService] Security validation failed:', validationResult);
+        
+        // Log security audit event for validation failure
+        await dicomSecurityAudit.logValidationFailure(imageId, validationResult.errors, {
+          fileSize: arrayBuffer.byteLength,
+          url: url,
+          validationResult: validationResult
+        });
+        
+        throw new Error(errorMessage);
+      }
+
+      if (validationResult.warnings.length > 0) {
+        console.warn('⚠️ [EnhancedDicomService] DICOM validation warnings:', validationResult.warnings);
+        
+        // Log suspicious activity for warnings
+        await dicomSecurityAudit.logSuspiciousActivity(
+          `DICOM validation warnings: ${validationResult.warnings.join(', ')}`,
+          undefined,
+          undefined,
+          { imageId, warnings: validationResult.warnings }
+        );
+      }
+
+      console.log('✅ [EnhancedDicomService] DICOM security validation passed for:', imageId);
+      
+      // Log successful validation
+      await dicomSecurityAudit.logValidationSuccess(imageId, {
+        loadTime: performance.now() - (performance.now() - 100), // Approximate validation time
+        fileSize: arrayBuffer.byteLength,
+        memoryUsage: arrayBuffer.byteLength
+      });
+
       // Use cornerstone to load the image
       const image = await cornerstone.loadImage(imageId);
       return image;

@@ -266,7 +266,7 @@ class EnhancedViewerManager {
         id: 'simple',
         name: 'Simple Viewer',
         description: 'Basic DICOM viewing with essential features',
-        component: 'SimpleDicomViewer',
+        component: 'UnifiedDicomViewer',
         capabilities: [
           {
             id: 'basic-rendering',
@@ -344,7 +344,7 @@ class EnhancedViewerManager {
         id: 'multi-frame',
         name: 'Multi-Frame Viewer',
         description: 'Enhanced viewer for multi-slice datasets with navigation',
-        component: 'MultiFrameDicomViewer',
+        component: 'UnifiedDicomViewer',
         capabilities: [
           {
             id: 'multi-slice-navigation',
@@ -431,7 +431,7 @@ class EnhancedViewerManager {
         id: 'comprehensive',
         name: 'Comprehensive Viewer',
         description: 'Full-featured viewer with AI, collaboration, and advanced tools',
-        component: 'ComprehensiveDicomViewer',
+        component: 'UnifiedDicomViewer',
         capabilities: [
           {
             id: 'advanced-rendering',

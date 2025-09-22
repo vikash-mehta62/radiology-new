@@ -1,9 +1,10 @@
 /**
- * MPR (Multi-Planar Reconstruction) Viewer Component
+ * Enhanced MPR (Multi-Planar Reconstruction) Viewer Component
  * Displays axial, sagittal, and coronal views of DICOM studies
+ * Integrated with 3D volume rendering and advanced visualization
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   Box,
   Card,
@@ -17,21 +18,91 @@ import {
   Slider,
   Switch,
   FormControlLabel,
-  Alert
+  Alert,
+  IconButton,
+  Tooltip,
+  ButtonGroup,
+  CircularProgress,
+  Paper,
+  Divider
 } from '@mui/material';
+import {
+  ThreeDRotation,
+  ViewInAr,
+  Straighten,
+  CropFree,
+  ZoomIn,
+  ZoomOut,
+  RotateLeft,
+  RotateRight,
+  RestartAlt,
+  Fullscreen,
+  Settings,
+  Visibility,
+  VisibilityOff
+} from '@mui/icons-material';
 import { Study } from '../../types';
 import { dicomService } from '../../services/dicomService';
 
 interface MPRViewerProps {
   study: Study;
   imageIds: string[];
+  volumeData?: VolumeData;
   settings: {
     windowWidth: number;
     windowCenter: number;
     crosshairEnabled: boolean;
     synchronizedScrolling: boolean;
+    renderMode: 'mip' | 'volume' | 'surface';
+    opacity: number;
+    threshold: number;
   };
   onSettingsChange: (settings: any) => void;
+  onError?: (error: string) => void;
+  enableAdvanced3D?: boolean;
+  enableVolumeRendering?: boolean;
+}
+
+interface VolumeData {
+  dimensions: { width: number; height: number; depth: number };
+  spacing: { x: number; y: number; z: number };
+  data: Float32Array;
+  dataRange: { min: number; max: number };
+}
+
+interface MPRState {
+  isLoading: boolean;
+  error: string | null;
+  volumeLoaded: boolean;
+  
+  // Current slice positions
+  axialSlice: number;
+  sagittalSlice: number;
+  coronalSlice: number;
+  
+  // Viewport states
+  viewports: {
+    axial: ViewportState;
+    sagittal: ViewportState;
+    coronal: ViewportState;
+    volume: ViewportState;
+  };
+  
+  // Crosshair position
+  crosshair: { x: number; y: number; z: number };
+  
+  // Active view
+  activeView: 'axial' | 'sagittal' | 'coronal' | 'volume';
+  
+  // 3D rendering state
+  webglSupported: boolean;
+  renderingMode: 'software' | 'webgl';
+}
+
+interface ViewportState {
+  zoom: number;
+  pan: { x: number; y: number };
+  rotation: number;
 }
 
 interface MPRPlanes {

@@ -8,6 +8,9 @@ module.exports = function(app) {
     changeOrigin: true,
     secure: false,
     logLevel: 'info',
+    pathRewrite: {
+      '^/api': '', // Remove /api prefix when forwarding to backend
+    },
     onError: (err, req, res) => {
       console.error('❌ Proxy Error:', err.message);
     },

@@ -5,6 +5,46 @@ const Study = require('../models/Study');
 
 const router = express.Router();
 
+// Helper function to call Python DICOM processor for PNG conversion
+const convertDicomToPng = (filePath, outputDir, sliceIndex = 0) => {
+  return new Promise((resolve, reject) => {
+    const pythonScript = path.join(__dirname, '..', 'utils', 'dicomHelper.py');
+    console.log(`Converting DICOM to PNG: ${filePath}`);
+    
+    const pythonProcess = spawn('python', [pythonScript, 'convert_to_png', filePath, outputDir, sliceIndex.toString()]);
+    
+    let output = '';
+    let errorOutput = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      console.log(`PNG conversion process closed with code: ${code}`);
+      
+      if (code === 0) {
+        try {
+          const result = JSON.parse(output);
+          resolve(result);
+        } catch (parseError) {
+          reject(new Error(`Failed to parse PNG conversion output: ${parseError.message}`));
+        }
+      } else {
+        reject(new Error(`PNG conversion failed with code ${code}: ${errorOutput}`));
+      }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      reject(new Error(`Failed to start PNG conversion process: ${error.message}`));
+    });
+  });
+};
+
 // Helper function to call Python DICOM processor for slice extraction
 const extractDicomSlices = (filePath, outputFormat = 'PNG', maxSlices = 10) => {
   return new Promise((resolve, reject) => {
@@ -55,31 +95,80 @@ const extractDicomSlices = (filePath, outputFormat = 'PNG', maxSlices = 10) => {
   });
 };
 
-// GET /dicom/process/:patient_id/:filename - Extract DICOM slices
+// Helper function to find DICOM file with fallback filenames
+const findDicomFile = async (patient_id, requestedFilename) => {
+  const fs = require('fs');
+  
+  // Try different filename variations
+  const possibleFilenames = [
+    requestedFilename,
+    '0002.DCM',
+    '1234.DCM', 
+    '0020.DCM',
+    'image.dcm',
+    'study.dcm'
+  ];
+  
+  // First try to find study by original filename
+  let study = await Study.findOne({ 
+    patient_id: patient_id,
+    original_filename: requestedFilename 
+  });
+  
+  // If not found, try to find any study for this patient
+  if (!study) {
+    study = await Study.findOne({ patient_id: patient_id });
+  }
+  
+  // Try each possible filename
+  for (const filename of possibleFilenames) {
+    const filePath = path.join(__dirname, '..', 'uploads', patient_id, filename);
+    if (fs.existsSync(filePath)) {
+      console.log(`Found DICOM file: ${filePath}`);
+      return { study, filePath, actualFilename: filename };
+    }
+  }
+  
+  return { study: null, filePath: null, actualFilename: null };
+};
+
+// GET /api/dicom/process/:patient_id/:filename - Extract DICOM slices with enhanced auto-detection
 router.get('/process/:patient_id/:filename', async (req, res) => {
   try {
     const { patient_id, filename } = req.params;
-    const { output_format = 'PNG', max_slices = 10, frame = 0 } = req.query;
-    console.log(req.body)
-    // Find the study
-    const study = await Study.findOne({ 
-      patient_id: patient_id,
-      original_filename: filename 
+    const { output_format = 'PNG', max_slices = 10, frame = 0, auto_detect = false } = req.query;
+    
+    console.log(`📥 [DICOM Processing] Processing request:`, {
+      patient_id,
+      filename,
+      output_format,
+      frame: parseInt(frame),
+      auto_detect: auto_detect === 'true'
     });
     
-    if (!study) {
+    // Find the DICOM file with fallback mechanism
+    const { study, filePath, actualFilename } = await findDicomFile(patient_id, filename);
+    
+    if (!filePath) {
       return res.status(404).json({ 
         success: false,
-        error: 'Study not found' 
+        error: `DICOM file not found for patient ${patient_id}. Tried filenames: ${filename}, 0002.DCM, 1234.DCM, 0020.DCM, image.dcm, study.dcm`
       });
     }
     
-    // Construct file path
-    const filePath = path.join(__dirname, '..', 'uploads', patient_id, filename);
+    console.log(`📂 [DICOM Processing] Found DICOM file at: ${filePath} (requested: ${filename}, actual: ${actualFilename})`);
     
     try {
-      // Extract slices using Python helper
-      const result = await extractDicomSlices(filePath, output_format, parseInt(max_slices));
+      // Enhanced slice extraction with auto-detection
+      const extractionSlices = auto_detect === 'true' ? null : parseInt(max_slices);
+      const result = await extractDicomSlices(filePath, output_format, extractionSlices);
+      
+      console.log(`📊 [DICOM Processing] Python helper result:`, {
+        success: result.success,
+        hasSlices: result.slices ? result.slices.length : 0,
+        hasAutoDetection: !!result.auto_detection_info,
+        totalSlicesExtracted: result.total_slices_extracted
+      });
       
       if (!result.success) {
         return res.status(500).json({
@@ -88,9 +177,9 @@ router.get('/process/:patient_id/:filename', async (req, res) => {
         });
       }
       
-      // If requesting a specific frame, return only that frame
+      // Handle frame-specific requests
+      const frameIndex = parseInt(frame);
       if (frame !== undefined && frame !== '' && result.slices && result.slices.length > 0) {
-        const frameIndex = parseInt(frame);
         if (frameIndex >= 0 && frameIndex < result.slices.length) {
           return res.json({
             success: true,
@@ -99,7 +188,29 @@ router.get('/process/:patient_id/:filename', async (req, res) => {
             slice_number: result.slices[frameIndex].slice_number,
             metadata: result.metadata,
             total_slices: result.total_slices_extracted,
+            frame_index: frameIndex,
+            auto_detection_info: result.auto_detection_info || null,
             all_slices: result.slices // Include all slices data
+          });
+        } else if (frameIndex === 0 || auto_detect === 'true') {
+          // Return first frame with full detection info for auto-detection requests
+          const frameData = result.slices[0];
+          return res.json({
+            success: true,
+            image_data: frameData.image_data,
+            format: frameData.format,
+            slice_number: frameData.slice_number,
+            metadata: result.metadata,
+            total_slices: result.total_slices_extracted,
+            frame_index: 0,
+            auto_detection_info: result.auto_detection_info || null,
+            all_slices: result.slices
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: 'Frame index out of range',
+            message: `Requested frame ${frameIndex} but only ${result.slices.length} frames available`
           });
         }
       }
@@ -110,11 +221,12 @@ router.get('/process/:patient_id/:filename', async (req, res) => {
         metadata: result.metadata,
         slices: result.slices,
         total_slices_extracted: result.total_slices_extracted,
-        total_slices_available: result.metadata.total_slices
+        total_slices_available: result.metadata.total_slices,
+        auto_detection_info: result.auto_detection_info || null
       });
       
     } catch (processingError) {
-      console.error('DICOM processing error:', processingError);
+      console.error('❌ [DICOM Processing] Error processing DICOM:', processingError);
       res.status(500).json({
         success: false,
         error: 'Failed to process DICOM file',
@@ -123,7 +235,7 @@ router.get('/process/:patient_id/:filename', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('Error in DICOM processing endpoint:', error);
+    console.error('❌ [DICOM Processing] Error in DICOM processing endpoint:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -132,21 +244,18 @@ router.get('/process/:patient_id/:filename', async (req, res) => {
   }
 });
 
-// GET /dicom/info/:patient_id/:filename - Get DICOM metadata
+// GET /api/dicom/info/:patient_id/:filename - Get DICOM metadata
 router.get('/info/:patient_id/:filename', async (req, res) => {
   try {
     const { patient_id, filename } = req.params;
     
-    // Find the study
-    const study = await Study.findOne({ 
-      patient_id: patient_id,
-      original_filename: filename 
-    });
+    // Find the DICOM file with fallback mechanism
+    const { study, filePath, actualFilename } = await findDicomFile(patient_id, filename);
     
     if (!study) {
       return res.status(404).json({ 
         success: false,
-        error: 'Study not found' 
+        error: `Study not found for patient ${patient_id}. Tried filenames: ${filename}, 0002.DCM, 1234.DCM, 0020.DCM, image.dcm, study.dcm`
       });
     }
     
@@ -170,6 +279,65 @@ router.get('/info/:patient_id/:filename', async (req, res) => {
     
   } catch (error) {
     console.error('Error getting DICOM info:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+// GET /api/dicom/png/:patient_id/:filename - Convert DICOM to PNG and serve
+router.get('/png/:patient_id/:filename', async (req, res) => {
+  try {
+    const { patient_id, filename } = req.params;
+    const sliceIndex = parseInt(req.query.slice) || 0;
+    
+    // Find the DICOM file with fallback mechanism
+    const { study, filePath, actualFilename } = await findDicomFile(patient_id, filename);
+    
+    if (!study) {
+      return res.status(404).json({ 
+        success: false,
+        error: `Study not found for patient ${patient_id}. Tried filenames: ${filename}, 0002.DCM, 1234.DCM, 0020.DCM, image.dcm, study.dcm`
+      });
+    }
+
+    // Create PNG cache directory
+    const pngCacheDir = path.join(__dirname, '..', 'cache', 'png');
+    
+    // Convert DICOM to PNG
+    const result = await convertDicomToPng(filePath, pngCacheDir, sliceIndex);
+    
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to convert DICOM to PNG',
+        details: result.error
+      });
+    }
+
+    // Serve the PNG file directly
+    const pngPath = result.png_path;
+    
+    // Set appropriate headers for PNG serving
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+    res.setHeader('X-Cached', result.cached ? 'true' : 'false');
+    
+    // Send the PNG file
+    res.sendFile(path.resolve(pngPath), (err) => {
+      if (err) {
+        console.error('Error serving PNG file:', err);
+        res.status(500).json({
+          success: false,
+          error: 'Failed to serve PNG file'
+        });
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in PNG conversion endpoint:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',

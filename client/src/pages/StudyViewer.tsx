@@ -1,5 +1,3 @@
-"use client"
-
 import type React from "react"
 import { useState, useEffect } from "react"
 import {
@@ -53,6 +51,8 @@ import {
   ViewInAr as ThreeDIcon,
   ViewModule as TwoDIcon,
   Dashboard as ComprehensiveIcon,
+  ViewInAr as ViewInArIcon,
+  Movie as MovieIcon,
   Chat as ChatIcon,
   VideoCall as VideoCallIcon,
   PersonAdd as PersonAddIcon,
@@ -64,14 +64,8 @@ import {
 
 import { useParams } from "react-router-dom"
 
-// Quarantined viewers - moved to quarantine folder
-// import ProfessionalDicomViewer from "../components/DICOM/ProfessionalDicomViewer"
-import SimpleDicomViewer from "../components/DICOM/SimpleDicomViewer"
-import MultiFrameDicomViewer from "../components/DICOM/MultiFrameDicomViewer"
-import ThreeDViewer from "../components/DICOM/ThreeDViewer"
-import ComprehensiveDicomViewer from "../components/DICOM/ComprehensiveDicomViewer"
-import OptimizedDicomViewer from "../components/DICOM/OptimizedDicomViewer"
-import DicomPerformanceMonitor from "../components/DICOM/DicomPerformanceMonitor"
+// Primary DICOM Viewer
+import UnifiedDicomViewer from "../components/DICOM/UnifiedDicomViewer"
 import CreateReportDialog from "../components/Report/CreateReportDialog"
 import type { Study } from "../types"
 import { apiService } from "../services/api"
@@ -87,8 +81,7 @@ const StudyViewer: React.FC = () => {
   const [isStarred, setIsStarred] = useState(false)
   const [urgentFindings, setUrgentFindings] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
-  const [useSimpleViewer, setUseSimpleViewer] = useState(true) // Start with simple viewer
-  const [viewerTab, setViewerTab] = useState(0) // 0 = Simple, 1 = MultiFrame, 2 = 3D, 3 = Comprehensive, 4 = Optimized
+  // Removed viewerTab - using only unified viewer now
   const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false)
   const [threeDSettings, setThreeDSettings] = useState({
     renderMode: 'volume' as 'volume' | 'mip' | 'surface' | 'raycast',
@@ -102,9 +95,9 @@ const StudyViewer: React.FC = () => {
   // Helper function to get DICOM URLs for 3D rendering
   const getDicomImageIds = (study: Study): string[] => {
     console.log('🔧 [StudyViewer] Getting DICOM URLs for study:', study.study_uid, 'Patient:', study.patient_id);
-    
+
     const cleanUrls: string[] = [];
-    
+
     // Extract clean HTTP URLs from the study's image_urls (remove wadouri: prefix if present)
     if (study.image_urls && Array.isArray(study.image_urls)) {
       study.image_urls.forEach(url => {
@@ -117,7 +110,7 @@ const StudyViewer: React.FC = () => {
         }
       });
     }
-    
+
     // Add fallback from dicom_url
     if (study.dicom_url) {
       let cleanUrl = study.dicom_url;
@@ -128,7 +121,7 @@ const StudyViewer: React.FC = () => {
         cleanUrls.push(cleanUrl);
       }
     }
-    
+
     // Add fallback from filename
     if (study.filename || study.original_filename) {
       const filename = study.filename || study.original_filename;
@@ -137,7 +130,7 @@ const StudyViewer: React.FC = () => {
         cleanUrls.push(url);
       }
     }
-    
+
     console.log('🔧 [StudyViewer] Clean DICOM URLs for 3D:', cleanUrls);
     return cleanUrls;
   }
@@ -158,8 +151,16 @@ const StudyViewer: React.FC = () => {
         setError(null)
 
         console.log("🔍 [StudyViewer] Fetching study:", studyUid)
+        console.log("🔍 [StudyViewer] API Base URL:", process.env.REACT_APP_API_URL || 'http://localhost:8000')
+        
+        // Test direct fetch to see what's happening
+        console.log("🧪 [StudyViewer] Testing direct fetch...")
+        const directResponse = await fetch(`http://localhost:8000/studies/${studyUid}`)
+        const directData = await directResponse.json()
+        console.log("🧪 [StudyViewer] Direct fetch result:", directData)
+        
         const response = await apiService.getStudy(studyUid)
-        console.log("📊 [StudyViewer] API response received:", response)
+        console.log("📊 [StudyViewer] API service response:", response)
         console.log("🖼️ [StudyViewer] Study data:", response)
         console.log("🖼️ [StudyViewer] Image URLs:", response?.image_urls)
         console.log("🔍 [StudyViewer] Study structure:", {
@@ -169,6 +170,9 @@ const StudyViewer: React.FC = () => {
           modality: response.modality,
           image_urls_count: response.image_urls?.length || 0,
           first_image_url: response.image_urls?.[0],
+          is_mock: response.mock || false,
+          dicom_url: response.dicom_url,
+          original_filename: response.original_filename
         })
 
         if (!response) {
@@ -318,9 +322,9 @@ const StudyViewer: React.FC = () => {
   }
 
   return (
-    <Box sx={{ 
-      minHeight: "100vh", 
-      display: "flex", 
+    <Box sx={{
+      minHeight: "100vh",
+      display: "flex",
       flexDirection: "column",
       bgcolor: "background.default",
       overflow: "hidden"
@@ -442,15 +446,6 @@ const StudyViewer: React.FC = () => {
 
                 <Button startIcon={<BillingIcon />} onClick={handleViewBilling} variant="outlined" size="medium">
                   Billing
-                </Button>
-
-                <Button
-                  onClick={() => setUseSimpleViewer(!useSimpleViewer)}
-                  variant="outlined"
-                  size="medium"
-                  color={useSimpleViewer ? "primary" : "secondary"}
-                >
-                  {useSimpleViewer ? "Professional View" : "Simple View"}
                 </Button>
               </Box>
 
@@ -672,9 +667,9 @@ const StudyViewer: React.FC = () => {
       </Paper>
 
       {/* Responsive Main Content Area */}
-      <Box sx={{ 
-        flexGrow: 1, 
-        display: "flex", 
+      <Box sx={{
+        flexGrow: 1,
+        display: "flex",
         flexDirection: { xs: "column", md: "row" },
         minHeight: 0,
         overflow: "hidden"
@@ -693,112 +688,32 @@ const StudyViewer: React.FC = () => {
         >
           {study ? (
             <>
-              {/* Viewer Tabs */}
-              <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
-                <Tabs 
-                  value={viewerTab} 
-                  onChange={(_, newValue) => setViewerTab(newValue)}
-                  variant="fullWidth"
-                  sx={{ minHeight: 48 }}
-                >
-                  <Tab 
-                    icon={<TwoDIcon />} 
-                    label="2D Viewer" 
-                    sx={{ minHeight: 48, fontSize: '0.875rem' }}
-                  />
-                  <Tab 
-                    icon={<ThreeDIcon />} 
-                    label="3D Volume" 
-                    sx={{ minHeight: 48, fontSize: '0.875rem' }}
-                  />
-                  <Tab 
-                    icon={<ComprehensiveIcon />} 
-                    label="Comprehensive" 
-                    sx={{ minHeight: 48, fontSize: '0.875rem' }}
-                  />
-                  <Tab 
-                    icon={<SpeedIcon />} 
-                    label="Optimized" 
-                    sx={{ minHeight: 48, fontSize: '0.875rem' }}
-                  />
-                </Tabs>
+              {/* Unified Viewer Header */}
+              <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', p: 1 }}>
+                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <ViewInArIcon />
+                  Unified DICOM Viewer
+                </Typography>
               </Box>
 
               {/* Viewer Content */}
               <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                {viewerTab === 0 ? (
-                  <SimpleDicomViewer
+                <UnifiedDicomViewer
                     study={study}
+                    userRole="radiologist"
+                    viewerMode="diagnostic"
+                    enableAdvancedTools={true}
+                    enableCollaboration={false}
+                    enableAI={false}
+                    enableWebGL={true}
+                    enableProgressiveLoading={true}
+                    enableCaching={true}
+                    adaptiveQuality={true}
                     onError={(error) => {
-                      console.error("Simple DICOM Viewer Error:", error)
-                      setError(`Simple DICOM Viewer Error: ${error}`)
+                      console.error("Unified DICOM Viewer Error:", error)
+                      setError(`Unified DICOM Viewer Error: ${error}`)
                     }}
                   />
-                ) : viewerTab === 1 ? (
-                  <MultiFrameDicomViewer
-                    study={study}
-                    onError={(error) => {
-                      console.error("MultiFrame DICOM Viewer Error:", error)
-                      setError(`MultiFrame DICOM Viewer Error: ${error}`)
-                    }}
-                  />
-                ) : viewerTab === 2 ? (
-                  <Box sx={{ height: '100%', position: 'relative' }}>
-                    <ThreeDViewer
-                      study={study}
-                      imageIds={getDicomImageIds(study)}
-                      settings={threeDSettings}
-                      onSettingsChange={setThreeDSettings}
-                    />
-                    {/* Debug info for development */}
-                    {process.env.NODE_ENV === 'development' && (
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 8,
-                          right: 8,
-                          bgcolor: 'rgba(0,0,0,0.7)',
-                          color: 'white',
-                          p: 1,
-                          borderRadius: 1,
-                          fontSize: '0.75rem',
-                          maxWidth: 300,
-                          zIndex: 1000
-                        }}
-                      >
-                        <Typography variant="caption" display="block">
-                          Study: {study.study_uid}
-                        </Typography>
-                        <Typography variant="caption" display="block">
-                          Patient: {study.patient_id}
-                        </Typography>
-                        <Typography variant="caption" display="block">
-                          Available URLs: {getDicomImageIds(study).length}
-                        </Typography>
-                        <Typography variant="caption" display="block" sx={{ fontSize: '0.6rem', opacity: 0.8 }}>
-                          URLs: {getDicomImageIds(study).slice(0, 2).map(url => url.split('/').pop()).join(', ')}
-                          {getDicomImageIds(study).length > 2 && '...'}
-                        </Typography>
-                      </Box>
-                    )}
-                  </Box>
-                ) : viewerTab === 2 ? (
-                  <ComprehensiveDicomViewer
-                    study={study}
-                    onError={(error) => {
-                      console.error("Comprehensive DICOM Viewer Error:", error)
-                      setError(`Comprehensive DICOM Viewer Error: ${error}`)
-                    }}
-                  />
-                ) : (
-                  <OptimizedDicomViewer
-                    study={study}
-                    onError={(error) => {
-                      console.error("Optimized DICOM Viewer Error:", error)
-                      setError(`Optimized DICOM Viewer Error: ${error}`)
-                    }}
-                  />
-                )}
               </Box>
             </>
           ) : (
@@ -834,16 +749,16 @@ const StudyViewer: React.FC = () => {
             order: { xs: 2, md: 1 }
           }}
         >
-          <Box sx={{ 
-            p: { xs: 2, sm: 3 }, 
+          <Box sx={{
+            p: { xs: 2, sm: 3 },
             height: "100%",
             display: "flex",
             flexDirection: "column"
           }}>
             {/* Header */}
-            <Box sx={{ 
-              pb: 2, 
-              borderBottom: 1, 
+            <Box sx={{
+              pb: 2,
+              borderBottom: 1,
               borderColor: "divider",
               mb: 2,
               flexShrink: 0
@@ -857,8 +772,8 @@ const StudyViewer: React.FC = () => {
             </Box>
 
             {/* Scrollable Content */}
-            <Box sx={{ 
-              flex: 1, 
+            <Box sx={{
+              flex: 1,
               overflow: "auto",
               pr: 1,
               '&::-webkit-scrollbar': {
@@ -878,8 +793,8 @@ const StudyViewer: React.FC = () => {
             }}>
 
               {/* Patient Information Card */}
-              <Card sx={{ 
-                mb: 2, 
+              <Card sx={{
+                mb: 2,
                 boxShadow: 1,
                 '&:hover': { boxShadow: 2 },
                 transition: 'box-shadow 0.2s'
@@ -891,7 +806,7 @@ const StudyViewer: React.FC = () => {
                       Patient Information
                     </Typography>
                   </Box>
-                  
+
                   <Grid container spacing={1}>
                     <Grid item xs={12}>
                       <Typography variant="body2" sx={{ mb: 1 }}>
@@ -933,10 +848,10 @@ const StudyViewer: React.FC = () => {
                         <Typography variant="body2">
                           <strong>Modality:</strong>
                         </Typography>
-                        <Chip 
-                          label={study.modality || "N/A"} 
-                          size="small" 
-                          color="primary" 
+                        <Chip
+                          label={study.modality || "N/A"}
+                          size="small"
+                          color="primary"
                           variant="outlined"
                         />
                       </Box>
@@ -946,8 +861,8 @@ const StudyViewer: React.FC = () => {
               </Card>
 
               {/* Study Details Card */}
-              <Card sx={{ 
-                mb: 2, 
+              <Card sx={{
+                mb: 2,
                 boxShadow: 1,
                 '&:hover': { boxShadow: 2 },
                 transition: 'box-shadow 0.2s'
@@ -959,23 +874,23 @@ const StudyViewer: React.FC = () => {
                       Study Details
                     </Typography>
                   </Box>
-                  
+
                   <Grid container spacing={1}>
                     <Grid item xs={12}>
                       <Typography variant="body2" sx={{ mb: 1 }}>
                         <strong>Study UID:</strong>
                       </Typography>
-                      <Paper sx={{ 
-                        p: 1, 
-                        bgcolor: "grey.50", 
+                      <Paper sx={{
+                        p: 1,
+                        bgcolor: "grey.50",
                         mb: 2,
                         border: 1,
                         borderColor: "grey.200"
                       }}>
-                        <Typography 
-                          variant="caption" 
-                          sx={{ 
-                            wordBreak: "break-all", 
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            wordBreak: "break-all",
                             fontFamily: "monospace",
                             fontSize: "0.7rem"
                           }}
@@ -1013,9 +928,9 @@ const StudyViewer: React.FC = () => {
                         <Typography variant="body2">
                           <strong>Status:</strong>
                         </Typography>
-                        <Chip 
-                          label={study.status} 
-                          size="small" 
+                        <Chip
+                          label={study.status}
+                          size="small"
                           color={getStatusColor(study.status) as any}
                           sx={{ fontWeight: 600 }}
                         />
@@ -1025,33 +940,33 @@ const StudyViewer: React.FC = () => {
                 </CardContent>
               </Card>
 
-            {/* Study Statistics Section */}
-            {study.study_statistics && (
-              <Card sx={{ mb: 2 }}>
-                <CardContent>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Study Statistics
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>Total Files:</strong> {study.study_statistics.total_files || "N/A"}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>Total Size:</strong>{" "}
-                    {study.study_statistics.total_size_mb ? `${study.study_statistics.total_size_mb} MB` : "N/A"}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>Series Count:</strong> {study.study_statistics.series_count || "N/A"}
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Instance Count:</strong> {study.study_statistics.instance_count || "N/A"}
-                  </Typography>
-                </CardContent>
-              </Card>
-            )}
+              {/* Study Statistics Section */}
+              {study.study_statistics && (
+                <Card sx={{ mb: 2 }}>
+                  <CardContent>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Study Statistics
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      <strong>Total Files:</strong> {study.study_statistics.total_files || "N/A"}
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      <strong>Total Size:</strong>{" "}
+                      {study.study_statistics.total_size_mb ? `${study.study_statistics.total_size_mb} MB` : "N/A"}
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      <strong>Series Count:</strong> {study.study_statistics.series_count || "N/A"}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Instance Count:</strong> {study.study_statistics.instance_count || "N/A"}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Quick Actions Card */}
-              <Card sx={{ 
-                mb: 2, 
+              <Card sx={{
+                mb: 2,
                 boxShadow: 1,
                 '&:hover': { boxShadow: 2 },
                 transition: 'box-shadow 0.2s'
@@ -1063,12 +978,12 @@ const StudyViewer: React.FC = () => {
                       Quick Actions
                     </Typography>
                   </Box>
-                  
+
                   <Grid container spacing={1}>
                     <Grid item xs={12}>
-                      <Button 
-                        variant="contained" 
-                        fullWidth 
+                      <Button
+                        variant="contained"
+                        fullWidth
                         startIcon={<ReportIcon />}
                         onClick={handleCreateReport}
                         sx={{ mb: 1 }}
@@ -1077,9 +992,9 @@ const StudyViewer: React.FC = () => {
                       </Button>
                     </Grid>
                     <Grid item xs={12}>
-                      <Button 
-                        variant="outlined" 
-                        fullWidth 
+                      <Button
+                        variant="outlined"
+                        fullWidth
                         startIcon={<BillingIcon />}
                         sx={{ mb: 1 }}
                       >
@@ -1087,9 +1002,9 @@ const StudyViewer: React.FC = () => {
                       </Button>
                     </Grid>
                     <Grid item xs={6}>
-                      <Button 
-                        variant="outlined" 
-                        fullWidth 
+                      <Button
+                        variant="outlined"
+                        fullWidth
                         startIcon={<ShareIcon />}
                         size="small"
                       >
@@ -1097,9 +1012,9 @@ const StudyViewer: React.FC = () => {
                       </Button>
                     </Grid>
                     <Grid item xs={6}>
-                      <Button 
-                        variant="outlined" 
-                        fullWidth 
+                      <Button
+                        variant="outlined"
+                        fullWidth
                         startIcon={<PrintIcon />}
                         size="small"
                       >
@@ -1111,8 +1026,8 @@ const StudyViewer: React.FC = () => {
               </Card>
 
               {/* Performance Monitor Card */}
-              <Card sx={{ 
-                mb: 2, 
+              <Card sx={{
+                mb: 2,
                 boxShadow: 1,
                 '&:hover': { boxShadow: 2 },
                 transition: 'box-shadow 0.2s'
@@ -1125,7 +1040,7 @@ const StudyViewer: React.FC = () => {
                         Performance Monitor
                       </Typography>
                     </Box>
-                    <Button 
+                    <Button
                       size="small"
                       variant={showPerformanceMonitor ? "contained" : "outlined"}
                       onClick={() => setShowPerformanceMonitor(!showPerformanceMonitor)}
@@ -1133,9 +1048,13 @@ const StudyViewer: React.FC = () => {
                       {showPerformanceMonitor ? "Hide" : "Show"}
                     </Button>
                   </Box>
-                  
+
                   {showPerformanceMonitor && (
-                    <DicomPerformanceMonitor />
+                    <Box sx={{ p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Performance monitoring is now integrated into the UnifiedDicomViewer component.
+                      </Typography>
+                    </Box>
                   )}
                 </CardContent>
               </Card>

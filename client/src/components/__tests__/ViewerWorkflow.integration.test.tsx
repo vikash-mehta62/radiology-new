@@ -12,9 +12,7 @@ import { getGlobalStateManager } from '../../services/unifiedStateManager';
 import { createEnhancedViewerManager } from '../../services/enhancedViewerManager';
 
 // Import components to test
-import SimpleDicomViewer from '../DICOM/SimpleDicomViewer';
-import MultiFrameDicomViewer from '../DICOM/MultiFrameDicomViewer';
-import ComprehensiveDicomViewer from '../DICOM/ComprehensiveDicomViewer';
+import UnifiedDicomViewer from '../DICOM/UnifiedDicomViewer';
 import EnhancedViewerContainer from '../DICOM/EnhancedViewerContainer';
 import ViewerModeSelector from '../DICOM/ViewerModeSelector';
 import StateManagementPanel from '../Common/StateManagementPanel';
@@ -66,11 +64,11 @@ describe('Viewer Workflow Integration Tests', () => {
     jest.clearAllMocks();
   });
 
-  describe('Simple Viewer Workflow', () => {
+  describe('Unified Viewer Workflow', () => {
     test('should load and display DICOM study', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -91,7 +89,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should handle image manipulation controls', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -121,7 +119,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={multiFrameStudy} />
+          <UnifiedDicomViewer study={multiFrameStudy} />
         </TestWrapper>
       );
 
@@ -159,7 +157,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={invalidStudy} />
+          <UnifiedDicomViewer study={invalidStudy} />
         </TestWrapper>
       );
 
@@ -186,7 +184,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <MultiFrameDicomViewer 
+          <UnifiedDicomViewer 
             study={multiFrameStudy}
             enableEnhancedNavigation={true}
             enableIntelligentCaching={true}
@@ -211,7 +209,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <MultiFrameDicomViewer 
+          <UnifiedDicomViewer 
             study={multiFrameStudy}
             enableIntelligentCaching={true}
           />
@@ -237,7 +235,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should integrate with performance monitoring', async () => {
       render(
         <TestWrapper>
-          <MultiFrameDicomViewer 
+          <UnifiedDicomViewer 
             study={mockStudy}
             enablePerformanceMonitoring={true}
           />
@@ -258,7 +256,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should load with all advanced features', async () => {
       render(
         <TestWrapper>
-          <ComprehensiveDicomViewer 
+          <UnifiedDicomViewer 
             study={mockStudy}
             enableAI={true}
             enableCollaboration={true}
@@ -280,7 +278,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should handle AI enhancement integration', async () => {
       render(
         <TestWrapper>
-          <ComprehensiveDicomViewer 
+          <UnifiedDicomViewer 
             study={mockStudy}
             enableAI={true}
           />
@@ -299,7 +297,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should handle collaboration features', async () => {
       render(
         <TestWrapper>
-          <ComprehensiveDicomViewer 
+          <UnifiedDicomViewer 
             study={mockStudy}
             enableCollaboration={true}
           />
@@ -476,7 +474,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -518,7 +516,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <MultiFrameDicomViewer 
+          <UnifiedDicomViewer 
             study={largeStudy}
             enableIntelligentCaching={true}
             enableProgressiveLoading={true}
@@ -539,7 +537,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should handle rapid user interactions', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -565,7 +563,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should be keyboard navigable', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -590,7 +588,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should have proper ARIA labels', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -611,7 +609,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should support screen readers', async () => {
       render(
         <TestWrapper>
-          <MultiFrameDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -639,7 +637,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -661,7 +659,7 @@ describe('Viewer Workflow Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <ComprehensiveDicomViewer 
+          <UnifiedDicomViewer 
             study={mockStudy}
             enableCollaboration={true}
           />

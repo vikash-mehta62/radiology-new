@@ -26,6 +26,18 @@ module.exports = {
     '<rootDir>/src/**/__tests__/**/*.integration.(ts|tsx|js|jsx)'
   ],
   
+  // Module name mapping (fixed from moduleNameMapping)
+  moduleNameMapper: {
+    "\\.(css|less|scss|sass)$": "identity-obj-proxy",
+    "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/src/__mocks__/fileMock.js",
+    "^@/(.*)$": "<rootDir>/src/$1",
+    "^@components/(.*)$": "<rootDir>/src/components/$1",
+    "^@hooks/(.*)$": "<rootDir>/src/hooks/$1",
+    "^@services/(.*)$": "<rootDir>/src/services/$1",
+    "^@types/(.*)$": "<rootDir>/src/types/$1",
+    "^@utils/(.*)$": "<rootDir>/src/utils/$1"
+  },
+  
   // Coverage configuration for integration tests
   collectCoverage: true,
   collectCoverageFrom: [
@@ -61,20 +73,6 @@ module.exports = {
   
   // Coverage directory
   coverageDirectory: '<rootDir>/coverage-integration',
-  
-  // Module name mapping for integration tests
-  moduleNameMapping: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-    '^@components/(.*)$': '<rootDir>/src/components/$1',
-    '^@services/(.*)$': '<rootDir>/src/services/$1',
-    '^@hooks/(.*)$': '<rootDir>/src/hooks/$1',
-    '^@types/(.*)$': '<rootDir>/src/types/$1',
-    '^@utils/(.*)$': '<rootDir>/src/utils/$1',
-    
-    // Mock static assets
-    '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
-    '\\.(jpg|jpeg|png|gif|svg)$': '<rootDir>/src/__mocks__/fileMock.js'
-  },
   
   // Transform configuration
   transform: {
@@ -163,11 +161,6 @@ module.exports = {
     'ts',
     'tsx',
     'json'
-  ],
-  
-  // Snapshot serializers
-  snapshotSerializers: [
-    '@emotion/jest/serializer'
   ],
   
   // Test result processor

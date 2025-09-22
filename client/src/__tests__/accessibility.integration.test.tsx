@@ -11,9 +11,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { MockDicomDataGenerator } from '../services/__tests__/testUtils';
 
 // Import components to test
-import SimpleDicomViewer from '../components/DICOM/SimpleDicomViewer';
-import MultiFrameDicomViewer from '../components/DICOM/MultiFrameDicomViewer';
-import ComprehensiveDicomViewer from '../components/DICOM/ComprehensiveDicomViewer';
+import UnifiedDicomViewer from '../components/DICOM/UnifiedDicomViewer';
 import EnhancedViewerContainer from '../components/DICOM/EnhancedViewerContainer';
 import ViewerModeSelector from '../components/DICOM/ViewerModeSelector';
 import StateManagementPanel from '../components/Common/StateManagementPanel';
@@ -81,10 +79,10 @@ describe('Accessibility Compliance Integration Tests', () => {
   });
 
   describe('WCAG 2.1 Level AA Compliance', () => {
-    test('SimpleDicomViewer should have no accessibility violations', async () => {
+    test('UnifiedDicomViewer should have no accessibility violations', async () => {
       const { container } = render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -97,10 +95,10 @@ describe('Accessibility Compliance Integration Tests', () => {
       expect(results).toHaveNoViolations();
     });
 
-    test('MultiFrameDicomViewer should have no accessibility violations', async () => {
+    test('UnifiedDicomViewer with multi-frame should have no accessibility violations', async () => {
       const { container } = render(
         <TestWrapper>
-          <MultiFrameDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -112,10 +110,10 @@ describe('Accessibility Compliance Integration Tests', () => {
       expect(results).toHaveNoViolations();
     });
 
-    test('ComprehensiveDicomViewer should have no accessibility violations', async () => {
+    test('UnifiedDicomViewer with comprehensive features should have no accessibility violations', async () => {
       const { container } = render(
         <TestWrapper>
-          <ComprehensiveDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -159,10 +157,10 @@ describe('Accessibility Compliance Integration Tests', () => {
   });
 
   describe('Keyboard Navigation', () => {
-    test('SimpleDicomViewer should be fully keyboard navigable', async () => {
+    test('UnifiedDicomViewer should be fully keyboard navigable', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -194,10 +192,10 @@ describe('Accessibility Compliance Integration Tests', () => {
       fireEvent.keyDown(resetButton, { key: ' ', code: 'Space' });
     });
 
-    test('MultiFrameDicomViewer should support keyboard shortcuts', async () => {
+    test('UnifiedDicomViewer should support keyboard shortcuts', async () => {
       render(
         <TestWrapper>
-          <MultiFrameDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -267,7 +265,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should have proper ARIA labels and roles', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -293,7 +291,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should provide descriptive text for complex interactions', async () => {
       render(
         <TestWrapper>
-          <MultiFrameDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -319,7 +317,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should announce state changes to screen readers', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -344,7 +342,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should meet color contrast requirements in light theme', async () => {
       const { container } = render(
         <TestWrapper theme={lightTheme}>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -364,7 +362,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should meet color contrast requirements in dark theme', async () => {
       const { container } = render(
         <TestWrapper theme={darkTheme}>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -383,7 +381,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should work with high contrast theme', async () => {
       const { container } = render(
         <TestWrapper theme={highContrastTheme}>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -508,7 +506,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should provide visible focus indicators', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -543,7 +541,7 @@ describe('Accessibility Compliance Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -582,7 +580,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should support voice control attributes', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -614,7 +612,7 @@ describe('Accessibility Compliance Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={invalidStudy} />
+          <UnifiedDicomViewer study={invalidStudy} />
         </TestWrapper>
       );
 
@@ -639,7 +637,7 @@ describe('Accessibility Compliance Integration Tests', () => {
 
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={invalidStudy} />
+          <UnifiedDicomViewer study={invalidStudy} />
         </TestWrapper>
       );
 
@@ -678,7 +676,7 @@ describe('Accessibility Compliance Integration Tests', () => {
 
       const { container } = render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -709,7 +707,7 @@ describe('Accessibility Compliance Integration Tests', () => {
 
       const { container } = render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 
@@ -729,7 +727,7 @@ describe('Accessibility Compliance Integration Tests', () => {
     test('should have proper language attributes', async () => {
       render(
         <TestWrapper>
-          <SimpleDicomViewer study={mockStudy} />
+          <UnifiedDicomViewer study={mockStudy} />
         </TestWrapper>
       );
 

@@ -25,7 +25,6 @@
     "noImplicitThis": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "suppressImplicitAnyIndexErrors": true,
     "paths": {
       "@/*": ["*"],
       "@/components/*": ["components/*"],

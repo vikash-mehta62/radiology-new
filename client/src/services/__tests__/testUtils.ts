@@ -309,7 +309,7 @@ export class PerformanceTestUtils {
         targetTime: number;
         result: T;
       }> {
-        const { result, averageTime } = await this.measureExecutionTime(fn, 5);
+        const { result, averageTime } = await PerformanceTestUtils.measureExecutionTime(fn, 5);
         
         return {
           passed: averageTime <= targetTime,

@@ -186,4 +186,48 @@ router.get('/system', async (req, res) => {
   }
 });
 
+// POST /debug/update-study - Update study information (for debugging)
+router.post('/update-study', async (req, res) => {
+  try {
+    const { study_uid, original_filename } = req.body;
+
+    if (!study_uid || !original_filename) {
+      return res.status(400).json({
+        success: false,
+        error: 'study_uid and original_filename are required'
+      });
+    }
+
+    const study = await Study.findOneAndUpdate(
+      { study_uid: study_uid },
+      { original_filename: original_filename },
+      { new: true }
+    );
+
+    if (!study) {
+      return res.status(404).json({
+        success: false,
+        error: 'Study not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Study updated successfully',
+      study: {
+        study_uid: study.study_uid,
+        original_filename: study.original_filename,
+        patient_id: study.patient_id
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating study:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

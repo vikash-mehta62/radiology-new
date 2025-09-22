@@ -3,18 +3,22 @@
  * Integrates the Enhanced Viewer Manager with existing DICOM viewers
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import {
-  Box, Paper, Alert, CircularProgress, Fade, Backdrop,
-  Snackbar, Typography, Card, CardContent
-} from '@mui/material';
+import React, { useEffect, useState, useCallback, useMemo, Suspense, lazy } from 'react';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import Alert from '@mui/material/Alert';
+import CircularProgress from '@mui/material/CircularProgress';
+import Fade from '@mui/material/Fade';
+import Backdrop from '@mui/material/Backdrop';
+import Snackbar from '@mui/material/Snackbar';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
 import { useViewerManager } from '../../hooks/useViewerManager';
 import ViewerModeSelector from './ViewerModeSelector';
 
-// Import existing viewers
-import SimpleDicomViewer from './SimpleDicomViewer';
-import MultiFrameDicomViewer from './MultiFrameDicomViewer';
-import ComprehensiveDicomViewer from './ComprehensiveDicomViewer';
+// Lazy load viewer components for better performance
+const UnifiedDicomViewer = lazy(() => import('./UnifiedDicomViewer'));
 
 import type { Study } from '../../types';
 
@@ -150,19 +154,17 @@ const EnhancedViewerContainer: React.FC<EnhancedViewerContainerProps> = ({
     };
 
     switch (currentMode.component) {
-      case 'SimpleDicomViewer':
-        return <SimpleDicomViewer {...viewerProps} />;
-      
-      case 'MultiFrameDicomViewer':
-        return <MultiFrameDicomViewer {...viewerProps} />;
-      
-      case 'ComprehensiveDicomViewer':
-        return <ComprehensiveDicomViewer {...viewerProps} />;
+      case 'UnifiedDicomViewer':
+        return (
+          <Suspense fallback={<CircularProgress />}>
+            <UnifiedDicomViewer {...viewerProps} />
+          </Suspense>
+        );
       
       default:
         return (
           <Alert severity="warning">
-            Unknown viewer component: {currentMode.component}
+            Unknown viewer component: {currentMode.component}. Using UnifiedDicomViewer as fallback.
           </Alert>
         );
     }

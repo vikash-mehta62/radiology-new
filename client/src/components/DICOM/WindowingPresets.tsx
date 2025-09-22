@@ -8,9 +8,19 @@ import {
 
 interface WindowingPresetsProps {
   onPresetSelect: (preset: { windowWidth: number; windowCenter: number }) => void;
+  currentWindowWidth?: number;
+  currentWindowCenter?: number;
+  onWindowWidthChange?: (value: number) => void;
+  onWindowCenterChange?: (value: number) => void;
 }
 
-const WindowingPresets: React.FC<WindowingPresetsProps> = ({ onPresetSelect }) => {
+const WindowingPresets: React.FC<WindowingPresetsProps> = ({ 
+  onPresetSelect,
+  currentWindowWidth,
+  currentWindowCenter,
+  onWindowWidthChange,
+  onWindowCenterChange
+}) => {
   const presets = [
     { name: 'Soft Tissue', windowWidth: 400, windowCenter: 40 },
     { name: 'Lung', windowWidth: 1500, windowCenter: -600 },

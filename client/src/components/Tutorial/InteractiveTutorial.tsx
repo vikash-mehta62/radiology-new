@@ -4,7 +4,17 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Paper, Typography, Button, Stepper, Step, StepLabel, StepContent, IconButton, Fade, Backdrop } from '@mui/material';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import Stepper from '@mui/material/Stepper';
+import Step from '@mui/material/Step';
+import StepLabel from '@mui/material/StepLabel';
+import StepContent from '@mui/material/StepContent';
+import IconButton from '@mui/material/IconButton';
+import Fade from '@mui/material/Fade';
+import Backdrop from '@mui/material/Backdrop';
 import { Close as CloseIcon, NavigateNext, NavigateBefore, PlayArrow, Pause } from '@mui/icons-material';
 
 export interface TutorialStep {

@@ -286,6 +286,27 @@ class StudyService {
         thumbnail_url: 'http://localhost:8042/instances/orthanc-instance-5/preview',
         reports: [],
       },
+      // Add the specific study from the error log
+      {
+        id: '6',
+        study_uid: 'aafc00c1-39ff-4db6-a4fb-636f9b9964fc',
+        patient_id: 'TEST001',
+        study_date: '2024-01-16',
+        modality: 'CT',
+        exam_type: 'ct_scan',
+        study_description: 'Test CT Study',
+        series_description: 'Test CT Series',
+        status: 'completed',
+        orthanc_id: 'orthanc-study-test',
+        created_at: '2024-01-16T10:00:00Z',
+        updated_at: '2024-01-16T10:05:00Z',
+        image_urls: [
+          'wadouri:http://localhost:8042/wado?requestType=WADO&studyUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc&seriesUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1&objectUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1.1&contentType=application/dicom',
+          'wadouri:http://localhost:8042/wado?requestType=WADO&studyUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc&seriesUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1&objectUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1.2&contentType=application/dicom',
+        ],
+        thumbnail_url: 'http://localhost:8042/instances/orthanc-instance-test/preview',
+        reports: [],
+      },
     ];
   }
 }

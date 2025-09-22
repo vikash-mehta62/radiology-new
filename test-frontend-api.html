@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend API Test</title>
+</head>
+<body>
+    <h1>Frontend API Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        async function testAPI() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<p>Testing API...</p>';
+            
+            try {
+                // Test studies endpoint
+                console.log('Testing studies endpoint...');
+                const response = await fetch('http://localhost:8000/studies');
+                const data = await response.json();
+                
+                console.log('API Response:', data);
+                
+                results.innerHTML = `
+                    <h2>API Test Results</h2>
+                    <p><strong>Status:</strong> ${response.status}</p>
+                    <p><strong>Studies Count:</strong> ${data.studies?.length || 0}</p>
+                    <p><strong>First Study:</strong></p>
+                    <pre>${JSON.stringify(data.studies?.[0] || {}, null, 2)}</pre>
+                `;
+                
+                // Test specific study if available
+                if (data.studies && data.studies.length > 0) {
+                    const firstStudy = data.studies[0];
+                    console.log('Testing specific study:', firstStudy.study_uid);
+                    
+                    const studyResponse = await fetch(`http://localhost:8000/studies/${firstStudy.study_uid}`);
+                    const studyData = await studyResponse.json();
+                    
+                    console.log('Study Response:', studyData);
+                    
+                    results.innerHTML += `
+                        <h3>Specific Study Test</h3>
+                        <p><strong>Study UID:</strong> ${studyData.study_uid}</p>
+                        <p><strong>Patient ID:</strong> ${studyData.patient_id}</p>
+                        <p><strong>Description:</strong> ${studyData.study_description}</p>
+                        <p><strong>DICOM URL:</strong> ${studyData.dicom_url}</p>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('API Test Error:', error);
+                results.innerHTML = `
+                    <h2>API Test Failed</h2>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <p>Check the browser console for more details.</p>
+                `;
+            }
+        }
+        
+        // Run test when page loads
+        window.onload = testAPI;
+    </script>
+</body>
+</html>
