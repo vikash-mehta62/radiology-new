@@ -1,0 +1,272 @@
+/* Accessibility Styles for Radiology Application */
+
+/* High Contrast Mode */
+.high-contrast {
+  --primary-color: #000000;
+  --secondary-color: #ffffff;
+  --background-color: #ffffff;
+  --surface-color: #f5f5f5;
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --border-color: #000000;
+  --focus-color: #0066cc;
+  --error-color: #cc0000;
+  --success-color: #006600;
+  --warning-color: #cc6600;
+}
+
+.high-contrast * {
+  border-color: var(--border-color) !important;
+}
+
+.high-contrast .MuiButton-root {
+  border: 2px solid var(--border-color) !important;
+  font-weight: 600 !important;
+}
+
+.high-contrast .MuiCard-root,
+.high-contrast .MuiPaper-root {
+  border: 2px solid var(--border-color) !important;
+  background-color: var(--surface-color) !important;
+}
+
+.high-contrast .MuiTextField-root .MuiOutlinedInput-root {
+  border: 2px solid var(--border-color) !important;
+}
+
+.high-contrast .MuiTextField-root .MuiOutlinedInput-root:hover {
+  border-color: var(--focus-color) !important;
+}
+
+.high-contrast .MuiTextField-root .MuiOutlinedInput-root.Mui-focused {
+  border-color: var(--focus-color) !important;
+  border-width: 3px !important;
+}
+
+/* Reduced Motion */
+.reduced-motion *,
+.reduced-motion *::before,
+.reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+.reduced-motion .MuiFade-root,
+.reduced-motion .MuiSlide-root,
+.reduced-motion .MuiGrow-root,
+.reduced-motion .MuiCollapse-root {
+  transition: none !important;
+}
+
+/* Focus Visible States */
+.focus-visible *:focus {
+  outline: 3px solid var(--focus-color, #0066cc) !important;
+  outline-offset: 2px !important;
+  border-radius: 4px !important;
+}
+
+.focus-visible .MuiButton-root:focus {
+  outline: 3px solid var(--focus-color, #0066cc) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3) !important;
+}
+
+.focus-visible .MuiIconButton-root:focus {
+  outline: 3px solid var(--focus-color, #0066cc) !important;
+  outline-offset: 2px !important;
+  border-radius: 50% !important;
+}
+
+.focus-visible .MuiTextField-root .MuiOutlinedInput-root:focus-within {
+  outline: 3px solid var(--focus-color, #0066cc) !important;
+  outline-offset: 2px !important;
+}
+
+.focus-visible .MuiTableRow-root:focus {
+  outline: 3px solid var(--focus-color, #0066cc) !important;
+  outline-offset: -2px !important;
+  background-color: rgba(0, 102, 204, 0.1) !important;
+}
+
+/* Font Size Adjustments */
+[data-font-size="small"] {
+  font-size: 0.875rem !important;
+}
+
+[data-font-size="small"] .MuiTypography-h1 { font-size: 2rem !important; }
+[data-font-size="small"] .MuiTypography-h2 { font-size: 1.75rem !important; }
+[data-font-size="small"] .MuiTypography-h3 { font-size: 1.5rem !important; }
+[data-font-size="small"] .MuiTypography-h4 { font-size: 1.25rem !important; }
+[data-font-size="small"] .MuiTypography-h5 { font-size: 1.125rem !important; }
+[data-font-size="small"] .MuiTypography-h6 { font-size: 1rem !important; }
+[data-font-size="small"] .MuiTypography-body1 { font-size: 0.875rem !important; }
+[data-font-size="small"] .MuiTypography-body2 { font-size: 0.75rem !important; }
+[data-font-size="small"] .MuiTypography-caption { font-size: 0.625rem !important; }
+
+[data-font-size="medium"] {
+  font-size: 1rem !important;
+}
+
+[data-font-size="large"] {
+  font-size: 1.125rem !important;
+}
+
+[data-font-size="large"] .MuiTypography-h1 { font-size: 2.5rem !important; }
+[data-font-size="large"] .MuiTypography-h2 { font-size: 2.25rem !important; }
+[data-font-size="large"] .MuiTypography-h3 { font-size: 2rem !important; }
+[data-font-size="large"] .MuiTypography-h4 { font-size: 1.75rem !important; }
+[data-font-size="large"] .MuiTypography-h5 { font-size: 1.5rem !important; }
+[data-font-size="large"] .MuiTypography-h6 { font-size: 1.25rem !important; }
+[data-font-size="large"] .MuiTypography-body1 { font-size: 1.125rem !important; }
+[data-font-size="large"] .MuiTypography-body2 { font-size: 1rem !important; }
+[data-font-size="large"] .MuiTypography-caption { font-size: 0.875rem !important; }
+
+/* Keyboard Navigation Enhancements */
+.keyboard-navigation .MuiTableRow-root {
+  cursor: pointer;
+}
+
+.keyboard-navigation .MuiTableRow-root:hover,
+.keyboard-navigation .MuiTableRow-root:focus {
+  background-color: rgba(0, 102, 204, 0.08) !important;
+}
+
+.keyboard-navigation .MuiTableRow-root[aria-selected="true"] {
+  background-color: rgba(0, 102, 204, 0.16) !important;
+}
+
+/* Screen Reader Only Content */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Skip Links */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: var(--focus-color, #0066cc);
+  color: white;
+  padding: 8px;
+  text-decoration: none;
+  border-radius: 4px;
+  z-index: 9999;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  top: 6px;
+}
+
+/* Medical Imaging Specific Accessibility */
+.medical-image-container {
+  position: relative;
+}
+
+.medical-image-container:focus {
+  outline: 3px solid var(--focus-color, #0066cc) !important;
+  outline-offset: 2px !important;
+}
+
+.medical-image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.high-contrast .medical-image-overlay {
+  border: 2px solid var(--border-color) !important;
+}
+
+/* DICOM Viewer Accessibility */
+.dicom-viewer-controls {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 4px;
+}
+
+.dicom-viewer-controls button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.high-contrast .dicom-viewer-controls {
+  background: var(--surface-color) !important;
+  border: 2px solid var(--border-color) !important;
+}
+
+/* Radiology-specific Color Indicators */
+.status-indicator {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.high-contrast .status-indicator {
+  border: 2px solid var(--border-color) !important;
+}
+
+.high-contrast .status-indicator.urgent::after {
+  content: "!";
+  position: absolute;
+  font-weight: bold;
+  font-size: 10px;
+  color: var(--text-primary);
+  margin-left: -6px;
+  margin-top: -1px;
+}
+
+.high-contrast .status-indicator.normal::after {
+  content: "✓";
+  position: absolute;
+  font-weight: bold;
+  font-size: 8px;
+  color: var(--text-primary);
+  margin-left: -4px;
+  margin-top: -1px;
+}
+
+/* Print Styles for Reports */
+@media print {
+  .accessibility-toolbar,
+  .skip-link,
+  .keyboard-shortcuts-help {
+    display: none !important;
+  }
+  
+  .high-contrast * {
+    color: black !important;
+    background: white !important;
+  }
+}
+
+/* Dark Mode Accessibility Enhancements */
+@media (prefers-color-scheme: dark) {
+  .high-contrast {
+    --primary-color: #ffffff;
+    --secondary-color: #000000;
+    --background-color: #000000;
+    --surface-color: #1a1a1a;
+    --text-primary: #ffffff;
+    --text-secondary: #cccccc;
+    --border-color: #ffffff;
+    --focus-color: #66b3ff;
+  }
+}

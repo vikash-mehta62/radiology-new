@@ -30,7 +30,8 @@ app.use((req, res, next) => {
 // Ensure required directories exist
 const requiredDirs = [
     path.join(__dirname, 'uploads'),
-    path.join(__dirname, 'slices')
+    path.join(__dirname, 'slices'),
+    path.join(__dirname, 'cache', 'png')
 ];
 
 requiredDirs.forEach(dir => {
@@ -43,6 +44,7 @@ requiredDirs.forEach(dir => {
 // Static file serving
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/slices', express.static(path.join(__dirname, 'slices')));
+app.use('/cache', express.static(path.join(__dirname, 'cache')));
 
 // Routes - API routes with /api prefix
 app.use('/patients', patientsRouter);

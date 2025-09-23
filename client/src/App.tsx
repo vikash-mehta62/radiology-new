@@ -1,6 +1,7 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { useEffect, lazy, Suspense, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Box, CssBaseline } from '@mui/material';
+import { Box, CssBaseline, Fab, Tooltip } from '@mui/material';
+import { Keyboard as KeyboardIcon } from '@mui/icons-material';
 
 import Layout from './components/Layout/Layout';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -8,6 +9,11 @@ import { useAuth } from './hooks/useAuth';
 import LoadingScreen from './components/Common/LoadingScreen';
 import ErrorBoundary from './components/ErrorHandling/ErrorBoundary';
 import { backgroundQueueProcessor } from './services/backgroundQueueProcessor';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import KeyboardShortcutsHelp from './components/KeyboardShortcutsHelp';
+import { AccessibilityProvider } from './components/Accessibility/AccessibilityProvider';
+import { AccessibilityToolbar } from './components/Accessibility/AccessibilityToolbar';
+import './styles/accessibility.css';
 
 // Lazy load all page components for code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -29,10 +35,24 @@ const DebugReports = lazy(() => import('./pages/DebugReports'));
 
 function App() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
   // For development, bypass authentication
   const isDevelopment = process.env.NODE_ENV === 'development';
   const shouldAuthenticate = isDevelopment ? true : isAuthenticated;
+
+  // Initialize keyboard shortcuts
+  useKeyboardShortcuts({
+    shortcuts: [
+      {
+        key: '?',
+        shiftKey: true,
+        action: () => setShowShortcutsHelp(true),
+        description: 'Show Keyboard Shortcuts',
+        category: 'actions'
+      }
+    ]
+  });
 
   // Initialize background queue processor
   useEffect(() => {
@@ -52,12 +72,17 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <ThemeProvider>
-        <CssBaseline />
-        <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-          <Layout>
-            <Suspense fallback={<LoadingScreen />}>
-              <Routes>
+      <AccessibilityProvider>
+        <ThemeProvider>
+          <CssBaseline />
+          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            {isLoading ? (
+              <LoadingScreen />
+            ) : (
+              <>
+                <Layout>
+                  <Suspense fallback={<LoadingScreen />}>
+                    <Routes>
                   {/* Public routes */}
                   <Route path="/login" element={<LoginPage />} />
                   
@@ -208,8 +233,46 @@ function App() {
                 </Routes>
             </Suspense>
             </Layout>
+            
+            {/* Accessibility Toolbar */}
+            <AccessibilityToolbar />
+            
+            {/* Keyboard Shortcuts Help Dialog */}
+            <KeyboardShortcutsHelp
+              open={showShortcutsHelp}
+              onClose={() => setShowShortcutsHelp(false)}
+            />
+            
+            {/* Floating Action Button for Keyboard Shortcuts */}
+            {shouldAuthenticate && (
+              <Tooltip title="Keyboard Shortcuts (Shift + ?)" placement="left">
+                <Fab
+                  color="primary"
+                  onClick={() => setShowShortcutsHelp(true)}
+                  sx={{
+                    position: 'fixed',
+                    bottom: 24,
+                    right: 24,
+                    zIndex: 1000,
+                    background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+                    boxShadow: '0 8px 24px rgba(25, 118, 210, 0.3)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)',
+                      transform: 'scale(1.05)',
+                      boxShadow: '0 12px 32px rgba(25, 118, 210, 0.4)'
+                    },
+                    transition: 'all 0.2s ease-in-out'
+                  }}
+                >
+                  <KeyboardIcon />
+                </Fab>
+              </Tooltip>
+            )}
+                </>
+              )}
           </Box>
         </ThemeProvider>
+      </AccessibilityProvider>
       </ErrorBoundary>
   );
 }

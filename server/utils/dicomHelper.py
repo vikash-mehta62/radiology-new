@@ -460,7 +460,15 @@ def main():
         
         file_path = sys.argv[2]
         output_format = sys.argv[3] if len(sys.argv) > 3 else 'PNG'
-        max_slices = int(sys.argv[4]) if len(sys.argv) > 4 else 10
+        
+        # Fix: Properly parse max_slices argument - '0' or negative means unlimited (None)
+        raw_max = sys.argv[4] if len(sys.argv) > 4 else None
+        try:
+            max_slices = int(raw_max) if raw_max is not None else None
+            if max_slices is not None and max_slices <= 0:
+                max_slices = None  # '0' or negative means process all slices
+        except (ValueError, TypeError):
+            max_slices = None  # Invalid input means process all slices
         
         result = extract_dicom_slices(file_path, output_format, max_slices)
         print(json.dumps(result))

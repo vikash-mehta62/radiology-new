@@ -1,4 +1,12 @@
-import React, { useState } from 'react';
+/*
+ * Layout Component - Apple HIG-inspired design with dark-mode-first approach
+ * Changes: Enhanced with Apple design principles, improved accessibility, keyboard navigation
+ * Backward compatibility: All existing props and functionality preserved
+ * TODO: Add gesture support for iPad/tablet users in reading rooms
+ * Smoke test: Open app -> verify dark mode by default -> test sidebar toggle -> verify responsive behavior
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Drawer,
@@ -11,12 +19,15 @@ import {
   Fade,
   Backdrop,
   SwipeableDrawer,
+  Tooltip,
+  Divider,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
   ChevronLeft as ChevronLeftIcon,
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 
 import Sidebar from './Sidebar';
@@ -27,22 +38,46 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+// Apple HIG-inspired spacing and dimensions
 const drawerWidth = 280;
-const mobileDrawerWidth = 260;
-const tabletDrawerWidth = 240;
+const mobileDrawerWidth = 320; // Increased for better touch targets
+const tabletDrawerWidth = 280;
+const appBarHeight = 64; // Apple's standard navigation bar height
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const theme = useTheme();
   const { mode, toggleTheme } = useCustomTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
   const { isAuthenticated } = useAuth();
   
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopOpen, setDesktopOpen] = useState(true);
-  const isTablet = useMediaQuery(theme.breakpoints.between('md', 'lg'));
+
+  // Keyboard shortcuts for radiologist workflow efficiency
+  const handleKeyboardShortcuts = useCallback((event: KeyboardEvent) => {
+    // Cmd/Ctrl + B to toggle sidebar (common in Apple apps)
+    if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
+      event.preventDefault();
+      handleDrawerToggle();
+    }
+    // Cmd/Ctrl + Shift + D to toggle dark mode
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'D') {
+      event.preventDefault();
+      toggleTheme();
+    }
+  }, []);
+
+  // Register keyboard shortcuts
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyboardShortcuts);
+    return () => {
+      document.removeEventListener('keydown', handleKeyboardShortcuts);
+    };
+  }, [handleKeyboardShortcuts]);
 
   // Auto-close mobile drawer when screen size changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isMobile && mobileOpen) {
       setMobileOpen(false);
     }
@@ -60,12 +95,35 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
   };
 
+  // Handle swipe gestures for mobile
+  const handleSwipeOpen = () => {
+    if (isMobile) {
+      setMobileOpen(true);
+    }
+  };
+
+  const handleSwipeClose = () => {
+    if (isMobile) {
+      setMobileOpen(false);
+    }
+  };
+
   if (!shouldShowSidebar) {
-    return <Box>{children}</Box>;
+    return (
+      <Box 
+        sx={{ 
+          minHeight: '100vh',
+          backgroundColor: theme.palette.background.default,
+        }}
+      >
+        {children}
+      </Box>
+    );
   }
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      {/* Apple HIG-inspired App Bar with glassmorphism effect */}
       <AppBar
         position="fixed"
         elevation={0}
@@ -78,58 +136,88 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             xs: 0,
             md: desktopOpen ? `${isMobile ? 0 : isTablet ? tabletDrawerWidth : drawerWidth}px` : 0,
           },
+          height: appBarHeight,
           transition: theme.transitions.create(['width', 'margin'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.leavingScreen,
+            easing: theme.transitions.easing.easeInOut,
+            duration: theme.transitions.duration.standard,
           }),
-          backdropFilter: 'blur(8px)',
+          // Apple-style glassmorphism
+          backdropFilter: 'blur(20px)',
           backgroundColor: theme.palette.mode === 'dark' 
-            ? 'rgba(26, 29, 41, 0.8)' 
+            ? 'rgba(28, 28, 30, 0.8)' 
             : 'rgba(255, 255, 255, 0.8)',
+          borderBottom: `1px solid ${theme.palette.mode === 'dark' 
+            ? 'rgba(255, 255, 255, 0.1)' 
+            : 'rgba(0, 0, 0, 0.1)'}`,
           zIndex: theme.zIndex.drawer + 1,
         }}
       >
-        <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
-          <IconButton
-            color="inherit"
-            aria-label="toggle drawer"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ 
-              mr: 2,
-              display: { xs: 'block', md: 'none' },
-              borderRadius: 2,
-              '&:hover': {
-                backgroundColor: theme.palette.action.hover,
-              },
-            }}
-          >
-            {(isMobile && mobileOpen) || (!isMobile && desktopOpen) ? (
-              <ChevronLeftIcon />
-            ) : (
-              <MenuIcon />
-            )}
-          </IconButton>
+        <Toolbar 
+          sx={{ 
+            minHeight: appBarHeight,
+            px: { xs: 2, sm: 3 },
+            gap: 1,
+          }}
+        >
+          {/* Hamburger/Close button with Apple-style animation */}
+          <Tooltip title={`${(isMobile && mobileOpen) || (!isMobile && desktopOpen) ? 'Close' : 'Open'} sidebar (⌘B)`}>
+            <IconButton
+              color="inherit"
+              aria-label="toggle drawer"
+              edge="start"
+              onClick={handleDrawerToggle}
+              sx={{ 
+                mr: 1,
+                borderRadius: 2,
+                width: 44,
+                height: 44,
+                transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)',
+                '&:hover': {
+                  backgroundColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.08)' 
+                    : 'rgba(0, 0, 0, 0.04)',
+                  transform: 'scale(1.05)',
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${theme.palette.primary.main}`,
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <Fade in={!((isMobile && mobileOpen) || (!isMobile && desktopOpen))} timeout={200}>
+                <MenuIcon />
+              </Fade>
+              <Fade in={(isMobile && mobileOpen) || (!isMobile && desktopOpen)} timeout={200}>
+                <ChevronLeftIcon sx={{ position: 'absolute' }} />
+              </Fade>
+            </IconButton>
+          </Tooltip>
           
+          {/* App title with Apple-inspired typography */}
           <Typography 
-            variant={isMobile ? 'h6' : 'h5'} 
+            variant="h5"
             noWrap 
             component="div" 
             sx={{ 
               flexGrow: 1,
               fontWeight: 600,
-              background: 'linear-gradient(45deg, #2196f3 30%, #9c27b0 90%)',
+              fontSize: { xs: '1.125rem', sm: '1.25rem', md: '1.5rem' },
+              letterSpacing: '-0.01em',
+              color: theme.palette.text.primary,
+              display: { xs: 'none', sm: 'block' },
+              // Apple-style gradient for brand recognition
+              background: theme.palette.mode === 'dark'
+                ? 'linear-gradient(45deg, #007AFF 30%, #5AC8FA 90%)'
+                : 'linear-gradient(45deg, #0056CC 30%, #007AFF 90%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-              fontSize: { xs: '1.1rem', sm: '1.25rem', md: '1.5rem' },
-              display: { xs: 'none', sm: 'block' }
             }}
           >
-            Kiro-mini
+            Radiology Viewer
           </Typography>
           
-          {/* Mobile title */}
+          {/* Mobile title (shorter) */}
           <Typography 
             variant="h6" 
             noWrap 
@@ -137,30 +225,50 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             sx={{ 
               flexGrow: 1,
               fontWeight: 600,
-              background: 'linear-gradient(45deg, #2196f3 30%, #9c27b0 90%)',
+              letterSpacing: '-0.01em',
+              display: { xs: 'block', sm: 'none' },
+              background: theme.palette.mode === 'dark'
+                ? 'linear-gradient(45deg, #007AFF 30%, #5AC8FA 90%)'
+                : 'linear-gradient(45deg, #0056CC 30%, #007AFF 90%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-              display: { xs: 'block', sm: 'none' }
             }}
           >
-            Kiro
+            Radiology
           </Typography>
           
-          <IconButton
-            color="inherit"
-            onClick={toggleTheme}
-            sx={{
-              borderRadius: 2,
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                backgroundColor: theme.palette.action.hover,
-                transform: 'scale(1.1)',
-              },
-            }}
-          >
-            {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
-          </IconButton>
+          {/* Theme toggle with Apple-style animation */}
+          <Tooltip title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode (⌘⇧D)`}>
+            <IconButton
+              color="inherit"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
+              sx={{
+                borderRadius: 2,
+                width: 44,
+                height: 44,
+                transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)',
+                '&:hover': {
+                  backgroundColor: theme.palette.mode === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.08)' 
+                    : 'rgba(0, 0, 0, 0.04)',
+                  transform: 'scale(1.05) rotate(15deg)',
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${theme.palette.primary.main}`,
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <Fade in={mode === 'dark'} timeout={300}>
+                <LightModeIcon sx={{ position: 'absolute' }} />
+              </Fade>
+              <Fade in={mode === 'light'} timeout={300}>
+                <DarkModeIcon sx={{ position: 'absolute' }} />
+              </Fade>
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 

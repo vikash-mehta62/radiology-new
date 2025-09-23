@@ -96,9 +96,9 @@ const DicomOverlay: React.FC<DicomOverlayProps> = ({
         <Typography variant="caption" display="block">
           Zoom: {Math.round(zoom * 100)}%
         </Typography>
-        {totalFrames > 1 && (
+        {Math.max(1, totalFrames) > 1 && (
           <Typography variant="caption" display="block">
-            Frame: {currentFrame + 1}/{totalFrames}
+            Frame: {currentFrame + 1}/{Math.max(1, totalFrames)}
           </Typography>
         )}
       </Box>

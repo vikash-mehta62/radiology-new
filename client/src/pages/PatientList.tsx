@@ -4,6 +4,10 @@ import { uploadService, UploadProgress, UploadResult } from '../services/uploadS
 import { patientService, Patient as PatientType } from '../services/patientService';
 import { studyService } from '../services/studyService';
 import SmartPatientDashboard from '../components/Patient/SmartPatientDashboard';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useAccessibility } from '../components/Accessibility/AccessibilityProvider';
+import { useRadiologyWorkflow } from '../hooks/useRadiologyWorkflow';
+import WorkflowToolbar from '../components/Radiology/WorkflowToolbar';
 import {
   Box,
   Card,
@@ -29,6 +33,14 @@ import {
   Grid,
   Alert,
   CircularProgress,
+  useTheme,
+  alpha,
+  Fade,
+  CardActionArea,
+  Badge,
+  Skeleton,
+  Tooltip,
+  Divider
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -47,6 +59,10 @@ import {
   CloudUpload as CloudUploadIcon,
   AttachFile as AttachFileIcon,
   Assignment as AssignmentIcon,
+  FilterList as FilterListIcon,
+  Sort as SortIcon,
+  Refresh as RefreshIcon,
+  Analytics as AnalyticsIcon
 } from '@mui/icons-material';
 
 // Using Patient interface from patientService
@@ -58,6 +74,18 @@ type Patient = PatientType & {
 const PatientList: React.FC = () => {
   console.log('PatientList component mounted');
   const navigate = useNavigate();
+  const theme = useTheme();
+  const { announceToScreenReader } = useAccessibility();
+  const { 
+    hangingProtocols, 
+    windowingPresets, 
+    batchOperations,
+    selectHangingProtocol,
+    getAutoWindowing,
+    createBatchOperation,
+    executeBatchOperation
+  } = useRadiologyWorkflow();
+  const [fadeIn, setFadeIn] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -72,6 +100,30 @@ const PatientList: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Initialize keyboard shortcuts for patient management
+  useKeyboardShortcuts({
+    onNewPatient: () => setShowAddDialog(true),
+    onSearch: () => {
+      const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+      searchInput?.focus();
+    },
+    onRefresh: () => window.location.reload(),
+    shortcuts: [
+      {
+        key: 'Escape',
+        action: () => {
+          // Close any open dialogs
+          if (showAddDialog) setShowAddDialog(false);
+          if (showDetails) setShowDetails(false);
+          if (showStudiesDialog) setShowStudiesDialog(false);
+          if (showUploadDialog) setShowUploadDialog(false);
+        },
+        description: 'Close dialogs',
+        category: 'actions'
+      }
+    ]
+  });
 
   // New patient form state
   const [newPatient, setNewPatient] = useState({
@@ -93,6 +145,10 @@ const PatientList: React.FC = () => {
     medical_history: ''
   });
   const [isCreatingPatient, setIsCreatingPatient] = useState(false);
+
+  useEffect(() => {
+    setTimeout(() => setFadeIn(true), 100);
+  }, []);
 
   useEffect(() => {
     console.log('showAddDialog changed:', showAddDialog);
@@ -413,56 +469,139 @@ const PatientList: React.FC = () => {
   };
 
   return (
-    <>
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-          Patient Demographics
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            console.log('Add Patient button clicked');
-            setShowAddDialog(true);
-            console.log('showAddDialog set to true');
-          }}
-        >
-          Add Patient
-        </Button>
-      </Box>
+    <Fade in={fadeIn} timeout={800}>
+      <>
+        <Box sx={{
+          minHeight: '100vh',
+          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
+          p: 3
+        }}>
+        {/* Header Section */}
+        <Paper sx={{
+          p: 3,
+          mb: 3,
+          borderRadius: 3,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.9)} 0%, ${alpha(theme.palette.background.paper, 0.95)} 100%)`,
+          backdropFilter: 'blur(20px)',
+          border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          boxShadow: `0 8px 32px ${alpha(theme.palette.common.black, 0.08)}`
+        }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="h4" sx={{ 
+                fontWeight: 700,
+                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                mb: 1
+              }}>
+                Patient Demographics
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Manage patient information and medical records
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                console.log('Add Patient button clicked');
+                setShowAddDialog(true);
+                console.log('showAddDialog set to true');
+              }}
+              sx={{
+                borderRadius: 2,
+                px: 3,
+                py: 1.5,
+                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                boxShadow: `0 4px 16px ${alpha(theme.palette.primary.main, 0.3)}`,
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: `0 8px 24px ${alpha(theme.palette.primary.main, 0.4)}`,
+                }
+              }}
+            >
+              Add Patient
+            </Button>
+          </Box>
+        </Paper>
 
-      {/* Search and Filter Section */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                placeholder="Search patients by name, ID, phone, or email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                <Chip
-                  label={`${filteredPatients.length} patients`}
-                  color="primary"
-                  variant="outlined"
+        {/* Workflow Toolbar */}
+        <WorkflowToolbar />
+
+        {/* Search and Filter Section */}
+        <Paper sx={{ 
+          mb: 3,
+          borderRadius: 3,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.9)} 0%, ${alpha(theme.palette.background.paper, 0.95)} 100%)`,
+          backdropFilter: 'blur(20px)',
+          border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          boxShadow: `0 8px 32px ${alpha(theme.palette.common.black, 0.08)}`
+        }}>
+          <CardContent sx={{ p: 3 }}>
+            <Grid container spacing={3} alignItems="center">
+              <Grid item xs={12} md={8}>
+                <TextField
+                  fullWidth
+                  placeholder="Search patients by name, ID, phone, or email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                      background: alpha(theme.palette.background.default, 0.5),
+                      '&:hover': {
+                        background: alpha(theme.palette.background.default, 0.7),
+                      },
+                      '&.Mui-focused': {
+                        background: alpha(theme.palette.background.default, 0.8),
+                      }
+                    }
+                  }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon color="primary" />
+                      </InputAdornment>
+                    ),
+                  }}
                 />
-              </Box>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <Badge badgeContent={filteredPatients.length} color="primary" max={999}>
+                    <Chip
+                      icon={<AnalyticsIcon />}
+                      label="Total Patients"
+                      variant="outlined"
+                      sx={{
+                        borderRadius: 2,
+                        background: alpha(theme.palette.primary.main, 0.1),
+                        border: `1px solid ${alpha(theme.palette.primary.main, 0.3)}`
+                      }}
+                    />
+                  </Badge>
+                  <Tooltip title="Refresh Data">
+                    <IconButton 
+                      onClick={() => window.location.reload()}
+                      sx={{
+                        background: alpha(theme.palette.action.hover, 0.5),
+                        '&:hover': {
+                          background: alpha(theme.palette.action.hover, 0.8),
+                          transform: 'rotate(180deg)',
+                        },
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      <RefreshIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              </Grid>
             </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Paper>
 
       {/* Debug Info */}
       <Card sx={{ mb: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
@@ -473,18 +612,53 @@ const PatientList: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Patients Table */}
-      <Card>
-        <CardContent>
+        {/* Patients Table */}
+        <Paper sx={{
+          borderRadius: 3,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.9)} 0%, ${alpha(theme.palette.background.paper, 0.95)} 100%)`,
+          backdropFilter: 'blur(20px)',
+          border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          boxShadow: `0 8px 32px ${alpha(theme.palette.common.black, 0.08)}`,
+          overflow: 'hidden'
+        }}>
           {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress />
+            <Box sx={{ p: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton
+                    key={i}
+                    variant="circular"
+                    width={60}
+                    height={60}
+                    animation="pulse"
+                    sx={{
+                      background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`
+                    }}
+                  />
+                ))}
+              </Box>
+              <Typography variant="body1" color="text.secondary">
+                Loading patient data...
+              </Typography>
             </Box>
           ) : (
-            <TableContainer component={Paper} variant="outlined">
+            <TableContainer sx={{ 
+              background: 'transparent',
+              '& .MuiTable-root': {
+                background: 'transparent'
+              }
+            }}>
               <Table>
                 <TableHead>
-                  <TableRow>
+                  <TableRow sx={{
+                    background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)} 0%, ${alpha(theme.palette.secondary.main, 0.08)} 100%)`,
+                    '& .MuiTableCell-head': {
+                      fontWeight: 600,
+                      color: theme.palette.text.primary,
+                      borderBottom: `2px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+                      py: 2
+                    }
+                  }}>
                     <TableCell>Patient</TableCell>
                     <TableCell>Patient ID</TableCell>
                     <TableCell>Age/Gender</TableCell>
@@ -496,56 +670,99 @@ const PatientList: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredPatients.map((patient) => (
-                    <TableRow key={patient.id} hover>
+                  {filteredPatients.map((patient, index) => (
+                    <TableRow 
+                      key={patient.id} 
+                      sx={{
+                        '&:hover': {
+                          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.04)} 0%, ${alpha(theme.palette.secondary.main, 0.04)} 100%)`,
+                          transform: 'translateX(4px)',
+                          transition: 'all 0.2s ease'
+                        },
+                        '& .MuiTableCell-root': {
+                          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                          py: 2
+                        }
+                      }}
+                    >
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <Avatar sx={{ bgcolor: 'primary.main' }}>
+                          <Avatar sx={{ 
+                            bgcolor: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                            width: 48,
+                            height: 48,
+                            fontWeight: 600,
+                            boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`
+                          }}>
                             {getInitials(patient.first_name, patient.last_name)}
                           </Avatar>
                           <Box>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
                               {patient.first_name} {patient.last_name}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <CalendarIcon sx={{ fontSize: 14 }} />
                               DOB: {formatDate(patient.date_of_birth)}
                             </Typography>
                           </Box>
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                          {patient.patient_id}
-                        </Typography>
+                        <Chip
+                          label={patient.patient_id}
+                          variant="outlined"
+                          size="small"
+                          sx={{
+                            fontFamily: 'monospace',
+                            fontWeight: 600,
+                            borderRadius: 2,
+                            background: alpha(theme.palette.info.main, 0.1),
+                            border: `1px solid ${alpha(theme.palette.info.main, 0.3)}`
+                          }}
+                        />
                       </TableCell>
                       <TableCell>
                         <Box>
-                          <Typography variant="body2">
+                          <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
                             {calculateAge(patient.date_of_birth)} years
                           </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {getGenderLabel(patient.gender)}
-                          </Typography>
+                          <Chip
+                            icon={<GenderIcon sx={{ fontSize: 14 }} />}
+                            label={getGenderLabel(patient.gender)}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              borderRadius: 2,
+                              background: alpha(theme.palette.secondary.main, 0.1),
+                              border: `1px solid ${alpha(theme.palette.secondary.main, 0.3)}`
+                            }}
+                          />
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Box>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                           {patient.phone && (
-                            <Typography variant="body2">
-                              {patient.phone}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <PhoneIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                              <Typography variant="body2">
+                                {patient.phone}
+                              </Typography>
+                            </Box>
                           )}
                           {patient.email && (
-                            <Typography variant="caption" color="text.secondary">
-                              {patient.email}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <EmailIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                              <Typography variant="caption" color="text.secondary">
+                                {patient.email}
+                              </Typography>
+                            </Box>
                           )}
                         </Box>
                       </TableCell>
                       <TableCell>
                         {patient.insurance ? (
                           <Box>
-                            <Typography variant="body2">
+                            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
                               {patient.insurance.provider}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
@@ -553,60 +770,106 @@ const PatientList: React.FC = () => {
                             </Typography>
                           </Box>
                         ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            No insurance
-                          </Typography>
+                          <Chip
+                            label="No insurance"
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            sx={{ borderRadius: 2 }}
+                          />
                         )}
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={patient.study_count || 0}
-                          size="small"
-                          color={patient.study_count ? 'primary' : 'default'}
-                          onClick={() => patient.study_count && handleViewStudies(patient)}
-                          sx={{ 
-                            cursor: patient.study_count ? 'pointer' : 'default',
-                            '&:hover': patient.study_count ? { backgroundColor: 'primary.dark' } : {}
-                          }}
-                        />
+                        <Badge badgeContent={patient.study_count || 0} color="primary" max={99}>
+                          <Chip
+                            icon={<StudyIcon />}
+                            label="Studies"
+                            size="small"
+                            color={patient.study_count ? 'primary' : 'default'}
+                            onClick={() => patient.study_count && handleViewStudies(patient)}
+                            sx={{ 
+                              cursor: patient.study_count ? 'pointer' : 'default',
+                              borderRadius: 2,
+                              '&:hover': patient.study_count ? { 
+                                transform: 'translateY(-2px)',
+                                boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`
+                              } : {},
+                              transition: 'all 0.2s ease'
+                            }}
+                          />
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         {patient.last_visit ? (
-                          <Typography variant="body2">
-                            {formatDate(patient.last_visit)}
-                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <CalendarIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                            <Typography variant="body2">
+                              {formatDate(patient.last_visit)}
+                            </Typography>
+                          </Box>
                         ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            Never
-                          </Typography>
+                          <Chip
+                            label="Never"
+                            size="small"
+                            variant="outlined"
+                            color="default"
+                            sx={{ borderRadius: 2 }}
+                          />
                         )}
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 1 }}>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleViewDetails(patient)}
-                            title="View Details"
-                          >
-                            <ViewIcon />
-                          </IconButton>
-                          <IconButton 
-                            size="small"
-                            onClick={() => handleViewStudies(patient)}
-                            title="View Studies"
-                          >
-                            <ViewListIcon />
-                          </IconButton>
-                          <IconButton 
-                            size="small"
-                            onClick={() => handleUploadData(patient)}
-                            title="Upload Data"
-                          >
-                            <UploadIcon />
-                          </IconButton>
-                          <IconButton size="small" title="Edit Patient">
-                            <EditIcon />
-                          </IconButton>
+                          <Tooltip title="View Details">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleViewDetails(patient)}
+                              sx={{
+                                background: alpha(theme.palette.info.main, 0.1),
+                                color: theme.palette.info.main,
+                                '&:hover': {
+                                  background: alpha(theme.palette.info.main, 0.2),
+                                  transform: 'scale(1.1)'
+                                },
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <ViewIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="View Studies">
+                            <IconButton 
+                              size="small"
+                              onClick={() => handleViewStudies(patient)}
+                              sx={{
+                                background: alpha(theme.palette.primary.main, 0.1),
+                                color: theme.palette.primary.main,
+                                '&:hover': {
+                                  background: alpha(theme.palette.primary.main, 0.2),
+                                  transform: 'scale(1.1)'
+                                },
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <ViewListIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Upload Data">
+                            <IconButton 
+                              size="small"
+                              onClick={() => handleUploadData(patient)}
+                              sx={{
+                                background: alpha(theme.palette.success.main, 0.1),
+                                color: theme.palette.success.main,
+                                '&:hover': {
+                                  background: alpha(theme.palette.success.main, 0.2),
+                                  transform: 'scale(1.1)'
+                                },
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <UploadIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </Box>
                       </TableCell>
                     </TableRow>
@@ -617,18 +880,44 @@ const PatientList: React.FC = () => {
           )}
 
           {!loading && filteredPatients.length === 0 && (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <PersonIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-              <Typography variant="h6" color="text.secondary">
+            <Box sx={{ 
+              textAlign: 'center', 
+              py: 8,
+              background: `linear-gradient(135deg, ${alpha(theme.palette.background.default, 0.5)} 0%, ${alpha(theme.palette.background.default, 0.8)} 100%)`,
+              borderRadius: 3,
+              m: 3
+            }}>
+              <PersonIcon sx={{ 
+                fontSize: 64, 
+                color: alpha(theme.palette.primary.main, 0.5), 
+                mb: 2 
+              }} />
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
                 No patients found
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                 {searchTerm ? 'Try adjusting your search criteria' : 'Add your first patient to get started'}
               </Typography>
+              {!searchTerm && (
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setShowAddDialog(true)}
+                  sx={{
+                    borderRadius: 2,
+                    px: 3,
+                    py: 1.5,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                    boxShadow: `0 4px 16px ${alpha(theme.palette.primary.main, 0.3)}`
+                  }}
+                >
+                  Add First Patient
+                </Button>
+              )}
             </Box>
           )}
-        </CardContent>
-      </Card>
+        </Paper>
+      </Box>
 
       {/* Patient Details Dialog */}
       <Dialog
@@ -1336,10 +1625,7 @@ const PatientList: React.FC = () => {
       </Dialog>
 
       {/* Add Patient Dialog */}
-    </Box>
-      {/* Add Patient Dialog */}
-            {/* Add Patient Dialog */}
-<Dialog
+      <Dialog
   open={showAddDialog}
   onClose={() => {
     console.log('Dialog onClose called');
@@ -1359,7 +1645,7 @@ const PatientList: React.FC = () => {
     },
   }}
 >
-  <DialogTitle>Add New Patidsgsdgsdfgdfsfsdent</DialogTitle>
+  <DialogTitle>Add New Patient</DialogTitle>
 
   <DialogContent
     sx={{
@@ -1588,7 +1874,8 @@ const PatientList: React.FC = () => {
   </DialogActions>
 </Dialog>
 
-    </>
+      </>
+    </Fade>
   );
 };
 
