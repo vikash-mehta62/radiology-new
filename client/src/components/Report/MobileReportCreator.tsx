@@ -53,7 +53,7 @@ import {
   MoreVert as MoreVertIcon,
   Save as SaveIcon,
   Send as SendIcon,
-  Description as TemplateIcon, // Fix: Use Description instead of Template
+  Description as TemplateIcon,
   Navigation as NavigationIcon,
   TouchApp as TouchIcon,
   Swipe as SwipeIcon,
@@ -62,7 +62,11 @@ import {
   PanTool as PanToolIcon,
   Visibility as VisibilityIcon,
   VolumeUp as VolumeUpIcon,
-  Close as CloseIcon
+  Report as ReportIcon,
+  Warning as WarningIcon,
+  Mic as VoiceIcon,
+  ArrowBack as BackIcon,
+  ArrowForward as ForwardIcon
 } from '@mui/icons-material';
 import { useSwipeable } from 'react-swipeable';
 import { enhancedVoiceRecognitionService } from '../../services/enhancedVoiceRecognitionService';
@@ -198,7 +202,7 @@ const MobileReportCreator: React.FC<MobileReportCreatorProps> = ({
     onSwipedDown: () => {
       setDrawerOpen(true);
     },
-    preventDefaultTouchmoveEvent: true,
+    preventScrollOnSwipe: true,
     trackMouse: true
   });
 

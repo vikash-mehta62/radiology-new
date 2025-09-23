@@ -39,7 +39,7 @@ class ReportService {
   async createReport(data: CreateReportRequest): Promise<Report> {
     try {
       console.log('🏥 Creating report for study:', data.study_uid);
-      
+
       const response = await apiService.post<Report>(this.baseUrl, {
         ...data,
         ai_generated: data.ai_generated ?? false,
@@ -127,7 +127,7 @@ class ReportService {
   async generateAIReport(studyUid: string): Promise<Report> {
     try {
       console.log('🤖 Generating AI report for study:', studyUid);
-      
+
       const response = await apiService.post<Report>(`${this.baseUrl}/ai-generate`, {
         study_uid: studyUid,
         ai_generated: true

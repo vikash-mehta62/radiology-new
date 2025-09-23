@@ -1,7 +1,5 @@
 import { apiService } from './api';
-import { reportService } from './reportService';
 import { auditService } from './auditService';
-import { Report } from '../types'; // Fix: Import Report from types instead of reportService
 import { reportService, Report, CreateReportRequest, UpdateReportRequest } from './reportService';
 
 export interface ReportPostCreationOptions {
@@ -47,7 +45,7 @@ class EnhancedReportService {
         report.study_uid,
         report.patient_id,
         {
-          exam_type: report.exam_type,
+          exam_type: data.exam_type || 'unknown',
           ai_generated: report.ai_generated,
           post_creation_options: data.postCreationOptions
         }
@@ -291,7 +289,7 @@ class EnhancedReportService {
       await apiService.post(`/api/patients/${report.patient_id}/reports`, {
         report_id: report.report_id,
         study_uid: report.study_uid,
-        exam_type: report.exam_type,
+        exam_type: 'unknown',
         status: report.status,
         created_at: report.created_at,
         updated_at: report.updated_at
@@ -356,7 +354,7 @@ class EnhancedReportService {
         report_id: report.report_id,
         study_uid: report.study_uid,
         patient_id: report.patient_id,
-        exam_type: report.exam_type,
+        exam_type: 'unknown',
         status: report.status
       });
 
@@ -380,8 +378,7 @@ class EnhancedReportService {
       const [report, auditTrail, relatedReports] = await Promise.all([
         this.getReportWithAudit(reportId),
         auditService.getReportAuditTrail(reportId),
-        reportService.getReports() // Fix: Use existing method instead of non-existent getReportsByStudy
-          .then(reports => reports.filter(r => r.study_uid === reportId))
+        reportService.getStudyReports(reportId)
       ]);
 
       return {
