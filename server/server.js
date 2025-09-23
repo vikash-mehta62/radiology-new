@@ -13,6 +13,7 @@ const uploadsRouter = require('./routes/uploads');
 const dicomProcessingRoutes = require('./routes/dicomProcessing');
 const reportsRouter = require('./routes/reports');
 const auditRouter = require('./routes/audit');
+const nestedFoldersRouter = require('./routes/nestedFolders');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -56,6 +57,7 @@ app.use('/uploads', uploadsRouter);
 app.use('/dicom', dicomProcessingRoutes);
 app.use('/api/reports', reportsRouter);
 app.use('/api/audit', auditRouter);
+app.use('/nested-folders', nestedFoldersRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

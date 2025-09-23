@@ -24,6 +24,8 @@ const StudyViewer = lazy(() => import('./pages/StudyViewer'));
 const FolderManager = lazy(() => import('./pages/FolderManager'));
 const ReportEditor = lazy(() => import('./pages/ReportEditor'));
 const BillingDashboard = lazy(() => import('./pages/BillingDashboard'));
+const NestedFolderManager = lazy(() => import('./pages/NestedFolderManager'));
+
 const MonitoringDashboard = lazy(() => import('./pages/MonitoringDashboard'));
 const ErrorHandlingDemo = lazy(() => import('./pages/ErrorHandlingDemo'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -109,7 +111,16 @@ function App() {
                       )
                     }
                   />
-                  
+                    <Route
+                    path="/folder"
+                    element={
+                      shouldAuthenticate ? (
+                        <NestedFolderManager />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    }
+                  />
                   <Route
                     path="/dashboard-old"
                     element={

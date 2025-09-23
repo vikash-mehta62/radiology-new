@@ -2,6 +2,98 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs').promises;
+const multer = require('multer');
+
+// Configure multer for enhanced file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const folderPath = req.body.folderPath || req.params.patient_id || 'default';
+    const uploadDir = path.join(__dirname, '..', 'uploads', folderPath);
+    
+    // Create directory if it doesn't exist
+    require('fs').mkdirSync(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    // Keep original filename with timestamp to avoid conflicts
+    const timestamp = Date.now();
+    const ext = path.extname(file.originalname);
+    const name = path.basename(file.originalname, ext);
+    cb(null, `${name}_${timestamp}${ext}`);
+  }
+});
+
+// Enhanced multer configuration for all file types
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 500 * 1024 * 1024 // 500MB limit
+  },
+  fileFilter: function (req, file, cb) {
+    // Allow all file types - no restrictions
+    cb(null, true);
+  }
+});
+
+// POST /uploads/multi - Upload multiple files to any folder
+router.post('/multi', upload.array('files'), async (req, res) => {
+  try {
+    const { folderPath = 'default' } = req.body;
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No files uploaded'
+      });
+    }
+
+    const uploadedFiles = req.files.map(file => ({
+      filename: file.filename,
+      originalname: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype,
+      path: file.path,
+      url: `/uploads/${folderPath}/${file.filename}`,
+      type: getFileType(path.extname(file.originalname).toLowerCase())
+    }));
+
+    console.log(`📤 Files uploaded to ${folderPath}:`, uploadedFiles.map(f => f.filename));
+
+    res.json({
+      success: true,
+      message: `Successfully uploaded ${req.files.length} file(s)`,
+      folderPath,
+      uploadedFiles
+    });
+
+  } catch (error) {
+    console.error('Error uploading files:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload files',
+      error: error.message
+    });
+  }
+});
+
+// Helper function to determine file type
+function getFileType(extension) {
+  const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.svg'];
+  const videoExts = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv'];
+  const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma'];
+  const documentExts = ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'];
+  const archiveExts = ['.zip', '.rar', '.7z', '.tar', '.gz'];
+  const medicalExts = ['.dcm', '.dicom'];
+
+  if (imageExts.includes(extension)) return 'image';
+  if (videoExts.includes(extension)) return 'video';
+  if (audioExts.includes(extension)) return 'audio';
+  if (documentExts.includes(extension)) return 'document';
+  if (archiveExts.includes(extension)) return 'archive';
+  if (medicalExts.includes(extension)) return 'medical';
+  
+  return 'other';
+}
 
 // GET /uploads/:patient_id/:filename - Serve uploaded files with proper CORS headers
 router.get('/:patient_id/:filename', async (req, res) => {

@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
+import FilePreview from '../components/FilePreview/FilePreview';
 import {
   Box,
   Card,
@@ -18,193 +20,271 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Chip,
-  Menu,
-  MenuItem,
   Breadcrumbs,
   Link,
   Alert,
-  CircularProgress,
-  Divider,
+  LinearProgress,
+  Paper,
+  Tooltip,
+  Snackbar,
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  Add as AddIcon,
   Folder as FolderIcon,
-  FolderOpen as FolderOpenIcon,
   InsertDriveFile as FileIcon,
-  MoreVert as MoreVertIcon,
-  Edit as EditIcon,
   Delete as DeleteIcon,
-  Share as ShareIcon,
   Download as DownloadIcon,
-  Upload as UploadIcon,
   CreateNewFolder as CreateFolderIcon,
-  NavigateNext as NavigateNextIcon,
   Home as HomeIcon,
   Image as ImageIcon,
   Description as DocumentIcon,
+  VideoFile as VideoIcon,
+  AudioFile as AudioIcon,
+  Archive as ArchiveIcon,
+  LocalHospital as MedicalIcon,
+  CloudUpload as CloudUploadIcon,
 } from '@mui/icons-material';
 
-interface FolderItem {
-  id: string;
-  name: string;
-  type: 'folder' | 'file';
-  parent_id?: string;
-  size?: number;
-  file_type?: string;
-  created_at: string;
-  updated_at?: string;
-  created_by: string;
-  study_count?: number;
-  file_count?: number;
-  shared?: boolean;
-  permissions?: {
-    read: boolean;
-    write: boolean;
-    delete: boolean;
-  };
-}
-
 const FolderManager: React.FC = () => {
-  const [items, setItems] = useState<FolderItem[]>([]);
-  const [currentPath, setCurrentPath] = useState<FolderItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [folders, setFolders] = useState<any[]>([]);
+  const [currentFolder, setCurrentFolder] = useState<string>('');
+  const [files, setFiles] = useState<any[]>([]);
+  const [subfolders, setSubfolders] = useState<any[]>([]); // Add state for subfolders
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedItem, setSelectedItem] = useState<FolderItem | null>(null);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [menuItem, setMenuItem] = useState<FolderItem | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
+  const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'info'>('info');
+  const [previewFile, setPreviewFile] = useState<any>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Mock data for development
-  useEffect(() => {
-    const mockItems: FolderItem[] = [
-      {
-        id: '1',
-        name: 'Patient Studies',
-        type: 'folder',
-        created_at: '2024-01-15T10:30:00Z',
-        created_by: 'admin',
-        study_count: 25,
-        file_count: 150,
-        permissions: { read: true, write: true, delete: true }
-      },
-      {
-        id: '2',
-        name: 'Templates',
-        type: 'folder',
-        created_at: '2024-01-20T14:20:00Z',
-        created_by: 'admin',
-        file_count: 12,
-        permissions: { read: true, write: true, delete: false }
-      },
-      {
-        id: '3',
-        name: 'Reports Archive',
-        type: 'folder',
-        created_at: '2024-02-01T09:15:00Z',
-        created_by: 'radiologist1',
-        file_count: 89,
-        shared: true,
-        permissions: { read: true, write: false, delete: false }
-      },
-      {
-        id: '4',
-        name: 'System Backups',
-        type: 'folder',
-        created_at: '2024-01-10T16:45:00Z',
-        created_by: 'system',
-        file_count: 5,
-        permissions: { read: true, write: false, delete: false }
-      },
-      {
-        id: '5',
-        name: 'CT Protocol Guidelines.pdf',
-        type: 'file',
-        file_type: 'pdf',
-        size: 2048576, // 2MB
-        created_at: '2024-02-15T11:30:00Z',
-        created_by: 'radiologist2',
-        permissions: { read: true, write: true, delete: true }
-      },
-      {
-        id: '6',
-        name: 'MRI Safety Checklist.docx',
-        type: 'file',
-        file_type: 'docx',
-        size: 524288, // 512KB
-        created_at: '2024-02-10T13:45:00Z',
-        created_by: 'technologist1',
-        shared: true,
-        permissions: { read: true, write: false, delete: false }
+  // Drag and drop configuration
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    if (acceptedFiles.length === 0) return;
+
+    setUploadStatus('Uploading files...');
+    const formData = new FormData();
+    
+    acceptedFiles.forEach((file) => {
+      formData.append('files', file);
+    });
+
+    try {
+      // Use virtual folder upload endpoint
+      formData.append('folderPath', currentFolder || '');
+
+      const response = await fetch('/api/nested-folders/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setUploadStatus('');
+        setSnackbarMessage(`Successfully uploaded ${acceptedFiles.length} file(s)`);
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+        
+        // Reload files based on current context
+        if (currentFolder) {
+          loadFiles(currentFolder);
+        } else {
+          loadFiles('');
+        }
+      } else {
+        throw new Error('Upload failed');
       }
-    ];
+    } catch (error) {
+      setUploadStatus('');
+      setSnackbarMessage('Upload failed. Please try again.');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    }
+  }, [currentFolder]);
 
-    setTimeout(() => {
-      setItems(mockItems);
+  const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
+    onDrop,
+    multiple: true,
+    maxSize: 500 * 1024 * 1024, // 500MB
+  });
+
+  // Load folders from API
+  const loadFolders = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/nested-folders');
+      if (response.ok) {
+        const data = await response.json();
+        // Extract folders from the structure response
+        setFolders(Array.isArray(data.structure) ? data.structure : []);
+      } else {
+        setError('Failed to load folders');
+      }
+    } catch (error) {
+      setError('Failed to connect to server');
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, []);
-
-  const filteredItems = items.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.created_by.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleItemClick = (item: FolderItem) => {
-    if (item.type === 'folder') {
-      // Navigate into folder
-      setCurrentPath([...currentPath, item]);
-      // In a real app, you would load the folder contents here
-    } else {
-      // Handle file click (preview, download, etc.)
-      console.log('File clicked:', item.name);
     }
   };
 
-  const handleBreadcrumbClick = (index: number) => {
-    if (index === -1) {
-      // Root folder
-      setCurrentPath([]);
-    } else {
-      // Navigate to specific folder in path
-      setCurrentPath(currentPath.slice(0, index + 1));
+  // Load files from a specific folder
+  const loadFiles = async (folderPath: string) => {
+    setLoading(true);
+    try {
+      // Use different endpoints for root vs specific folder
+      const url = folderPath ? `/api/nested-folders/folder/${encodeURIComponent(folderPath)}` : '/api/nested-folders';
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (folderPath) {
+          // For specific folder, extract files and folders arrays from API response
+          setFiles(Array.isArray(data.files) ? data.files : []);
+          setSubfolders(Array.isArray(data.folders) ? data.folders : []); // Set subfolders
+        } else {
+          // For root, use the structure array as folders and no files
+          setFiles([]);
+          setSubfolders(Array.isArray(data.structure) ? data.structure : []);
+        }
+      } else {
+        setError('Failed to load files');
+      }
+    } catch (error) {
+      setError('Failed to connect to server');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleMenuClick = (event: React.MouseEvent<HTMLElement>, item: FolderItem) => {
-    event.stopPropagation();
-    setAnchorEl(event.currentTarget);
-    setMenuItem(item);
-  };
+  // Create new folder
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return;
 
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-    setMenuItem(null);
-  };
+    try {
+      const response = await fetch('/api/nested-folders/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          folderName: newFolderName,
+          parentPath: currentFolder || ''
+        }),
+      });
 
-  const handleCreateFolder = () => {
-    if (newFolderName.trim()) {
-      const newFolder: FolderItem = {
-        id: Date.now().toString(),
-        name: newFolderName.trim(),
-        type: 'folder',
-        parent_id: currentPath.length > 0 ? currentPath[currentPath.length - 1].id : undefined,
-        created_at: new Date().toISOString(),
-        created_by: 'current_user',
-        file_count: 0,
-        permissions: { read: true, write: true, delete: true }
-      };
-      
-      setItems([...items, newFolder]);
-      setNewFolderName('');
-      setShowCreateDialog(false);
+      if (response.ok) {
+        setCreateFolderOpen(false);
+        setNewFolderName('');
+        setSnackbarMessage('Folder created successfully');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+        loadFolders();
+      } else {
+        setSnackbarMessage('Failed to create folder');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+      }
+    } catch (error) {
+      setSnackbarMessage('Failed to create folder');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
     }
   };
 
-  const formatFileSize = (bytes: number): string => {
+  // Delete folder
+  const deleteFolder = async (folderPath: string) => {
+    if (!window.confirm('Are you sure you want to delete this folder?')) return;
+
+    try {
+      const response = await fetch(`/api/nested-folders/folder/${encodeURIComponent(folderPath)}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setSnackbarMessage('Folder deleted successfully');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+        loadFolders();
+      } else {
+        setSnackbarMessage('Failed to delete folder');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+      }
+    } catch (error) {
+      setSnackbarMessage('Failed to delete folder');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    }
+  };
+
+  // Delete file
+  const deleteFile = async (filename: string) => {
+    if (!window.confirm('Are you sure you want to delete this file?')) return;
+
+    try {
+      // Construct virtual file path
+      const virtualPath = currentFolder ? `${currentFolder}/${filename}` : filename;
+      const response = await fetch(`/api/nested-folders/file/${encodeURIComponent(virtualPath)}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setSnackbarMessage('File deleted successfully');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
+        loadFiles(currentFolder);
+      } else {
+        setSnackbarMessage('Failed to delete file');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+      }
+    } catch (error) {
+      setSnackbarMessage('Failed to delete file');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    }
+  };
+
+  // Get file icon based on type
+  const getFileIcon = (fileType: string) => {
+    switch (fileType?.toLowerCase()) {
+      case 'pdf':
+        return <DocumentIcon color="error" />;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'webp':
+        return <ImageIcon color="success" />;
+      case 'mp4':
+      case 'avi':
+      case 'mov':
+      case 'wmv':
+        return <VideoIcon color="info" />;
+      case 'mp3':
+      case 'wav':
+      case 'flac':
+        return <AudioIcon color="warning" />;
+      case 'zip':
+      case 'rar':
+      case '7z':
+        return <ArchiveIcon color="secondary" />;
+      case 'dcm':
+      case 'dicom':
+        return <MedicalIcon color="primary" />;
+      default:
+        return <FileIcon />;
+    }
+  };
+
+  // Format file size
+  const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -212,273 +292,408 @@ const FolderManager: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const formatDate = (dateString: string): string => {
-    if (!dateString) return 'Invalid Date';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      return date.toLocaleDateString();
-    } catch (error) {
-      return 'Invalid Date';
-    }
+  // Handle file preview
+  const handlePreviewFile = (file: any) => {
+    setPreviewFile(file);
+    setPreviewOpen(true);
   };
 
-  const getFileIcon = (item: FolderItem) => {
-    if (item.type === 'folder') {
-      return <FolderIcon color="primary" />;
-    }
-    
-    switch (item.file_type) {
-      case 'pdf':
-        return <DocumentIcon color="error" />;
-      case 'docx':
-      case 'doc':
-        return <DocumentIcon color="info" />;
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-        return <ImageIcon color="success" />;
-      default:
-        return <FileIcon color="action" />;
-    }
+  // Handle close preview
+  const handleClosePreview = () => {
+    setPreviewOpen(false);
+    setPreviewFile(null);
   };
 
-  const getCurrentFolderName = (): string => {
-    if (currentPath.length === 0) return 'Root';
-    return currentPath[currentPath.length - 1].name;
-  };
+  // Load folders on component mount
+  useEffect(() => {
+    loadFolders();
+    // Load files from root folder on initial load
+    loadFiles('');
+  }, []);
+
+  // Load files when folder changes
+  useEffect(() => {
+    if (currentFolder) {
+      loadFiles(currentFolder);
+    }
+  }, [currentFolder]);
+
+  const filteredFolders = (Array.isArray(folders) ? folders : []).filter(folder =>
+    folder.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredFiles = (Array.isArray(files) ? files : []).filter(file =>
+    file.filename.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredSubfolders = (Array.isArray(subfolders) ? subfolders : []).filter(subfolder =>
+    subfolder.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-          Folder Manager
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="outlined"
-            startIcon={<UploadIcon />}
-            onClick={() => setShowUploadDialog(true)}
-          >
-            Upload
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<CreateFolderIcon />}
-            onClick={() => setShowCreateDialog(true)}
-          >
-            New Folder
-          </Button>
-        </Box>
-      </Box>
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h4" gutterBottom>
+        File Manager
+      </Typography>
 
-      {/* Breadcrumb Navigation */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Breadcrumbs
-            separator={<NavigateNextIcon fontSize="small" />}
-            aria-label="folder breadcrumb"
-          >
-            <Link
-              component="button"
-              variant="body1"
-              onClick={() => handleBreadcrumbClick(-1)}
-              sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}
+      {/* Search and Actions */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            placeholder="Search folders and files..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+            <Button
+              variant="contained"
+              startIcon={<CreateFolderIcon />}
+              onClick={() => setCreateFolderOpen(true)}
             >
-              <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
-              Root
-            </Link>
-            {currentPath.map((folder, index) => (
-              <Link
-                key={folder.id}
-                component="button"
-                variant="body1"
-                onClick={() => handleBreadcrumbClick(index)}
-                sx={{ textDecoration: 'none' }}
-              >
-                {folder.name}
-              </Link>
-            ))}
-          </Breadcrumbs>
-        </CardContent>
-      </Card>
+              New Folder
+            </Button>
+          </Box>
+        </Grid>
+      </Grid>
 
-      {/* Search and Current Folder Info */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                placeholder="Search files and folders..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                <Chip
-                  label={`${filteredItems.filter(i => i.type === 'folder').length} folders`}
-                  color="primary"
-                  variant="outlined"
-                />
-                <Chip
-                  label={`${filteredItems.filter(i => i.type === 'file').length} files`}
-                  color="secondary"
-                  variant="outlined"
-                />
-              </Box>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-
-      {/* File/Folder List */}
-      <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            {getCurrentFolderName()}
+      {/* Breadcrumbs */}
+      {currentFolder && (
+        <Breadcrumbs sx={{ mb: 2 }}>
+          <Link
+            component="button"
+            variant="body1"
+            onClick={() => setCurrentFolder('')}
+            sx={{ display: 'flex', alignItems: 'center' }}
+          >
+            <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+            Home
+          </Link>
+          <Typography color="text.primary" sx={{ display: 'flex', alignItems: 'center' }}>
+            <FolderIcon sx={{ mr: 0.5 }} fontSize="inherit" />
+            {currentFolder}
           </Typography>
-          
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress />
-            </Box>
-          ) : (
-            <List>
-              {filteredItems.map((item, index) => (
-                <React.Fragment key={item.id}>
-                  <ListItem
-                    button
-                    onClick={() => handleItemClick(item)}
-                    sx={{
-                      borderRadius: 1,
-                      mb: 0.5,
-                      '&:hover': {
-                        backgroundColor: 'action.hover',
-                      },
-                    }}
-                  >
-                    <ListItemIcon>
-                      {getFileIcon(item)}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body1">
-                            {item.name}
-                          </Typography>
-                          {item.shared && (
-                            <Chip
-                              label="Shared"
-                              size="small"
-                              color="info"
-                              variant="outlined"
-                            />
-                          )}
-                        </Box>
-                      }
-                      secondary={
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">
-                            Created by {item.created_by} on {formatDate(item.created_at)}
-                          </Typography>
-                          {item.type === 'folder' && (
-                            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-                              {item.study_count ? `${item.study_count} studies, ` : ''}
-                              {item.file_count || 0} files
-                            </Typography>
-                          )}
-                          {item.type === 'file' && item.size && (
-                            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-                              {formatFileSize(item.size)}
-                            </Typography>
-                          )}
-                        </Box>
-                      }
-                    />
-                    <ListItemSecondaryAction>
-                      <IconButton
-                        edge="end"
-                        onClick={(e) => handleMenuClick(e, item)}
-                      >
-                        <MoreVertIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                  {index < filteredItems.length - 1 && <Divider />}
-                </React.Fragment>
-              ))}
-            </List>
-          )}
+        </Breadcrumbs>
+      )}
 
-          {!loading && filteredItems.length === 0 && (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <FolderOpenIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-              <Typography variant="h6" color="text.secondary">
-                No items found
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {searchTerm ? 'Try adjusting your search criteria' : 'This folder is empty'}
-              </Typography>
-            </Box>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Context Menu */}
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleMenuClose}
+      {/* Drag & Drop Upload Area */}
+      <Paper
+        {...getRootProps()}
+        sx={{
+          p: 3,
+          mb: 3,
+          border: '2px dashed',
+          borderColor: isDragActive ? 'primary.main' : 'grey.300',
+          backgroundColor: isDragActive ? 'action.hover' : 'background.paper',
+          cursor: 'pointer',
+          textAlign: 'center',
+          transition: 'all 0.2s ease-in-out',
+        }}
       >
-        <MenuItem onClick={handleMenuClose}>
-          <ListItemIcon>
-            <EditIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Rename</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleMenuClose}>
-          <ListItemIcon>
-            <ShareIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Share</ListItemText>
-        </MenuItem>
-        {menuItem?.type === 'file' && (
-          <MenuItem onClick={handleMenuClose}>
-            <ListItemIcon>
-              <DownloadIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Download</ListItemText>
-          </MenuItem>
+        <input {...getInputProps()} />
+        <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+        <Typography variant="h6" gutterBottom>
+          {isDragActive ? 'Drop files here...' : 'Drag & drop files here, or click to select'}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Supports all file types (JPG, PNG, PDF, DCM, etc.) up to 500MB each
+        </Typography>
+        {uploadStatus && (
+          <Box sx={{ mt: 2 }}>
+            <LinearProgress />
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              {uploadStatus}
+            </Typography>
+          </Box>
         )}
-        <Divider />
-        <MenuItem onClick={handleMenuClose} sx={{ color: 'error.main' }}>
-          <ListItemIcon>
-            <DeleteIcon fontSize="small" color="error" />
-          </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
+      </Paper>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {loading && <LinearProgress sx={{ mb: 2 }} />}
+
+      {/* Content Grid */}
+      <Grid container spacing={3}>
+        {/* Folders List */}
+        {!currentFolder && (
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Folders ({filteredFolders.length})
+                </Typography>
+                <List>
+                  {filteredFolders.map((folder) => (
+                    <ListItem
+                      key={folder.name}
+                      button
+                      onClick={() => setCurrentFolder(folder.path)}
+                    >
+                      <ListItemIcon>
+                        <FolderIcon color="primary" />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={folder.name}
+                        secondary={`${folder.fileCount || 0} files • Created ${new Date(folder.created).toLocaleDateString()}`}
+                      />
+                      <ListItemSecondaryAction>
+                        <IconButton
+                          edge="end"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteFolder(folder.path);
+                          }}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  ))}
+                  {filteredFolders.length === 0 && !loading && (
+                    <ListItem>
+                      <ListItemText
+                        primary="No folders found"
+                        secondary="Create a new folder to get started"
+                      />
+                    </ListItem>
+                  )}
+                </List>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {/* Root Files List */}
+        {!currentFolder && filteredFiles.length > 0 && (
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Files in Root Folder ({filteredFiles.length})
+                </Typography>
+                <List>
+                  {filteredFiles.map((file) => (
+                    <ListItem key={file.filename}>
+                      <ListItemIcon>
+                        {getFileIcon(file.type)}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Button
+                            variant="text"
+                            onClick={() => handlePreviewFile(file)}
+                            sx={{ 
+                              textTransform: 'none', 
+                              justifyContent: 'flex-start',
+                              p: 0,
+                              minWidth: 'auto',
+                              color: 'text.primary',
+                              '&:hover': {
+                                backgroundColor: 'transparent',
+                                textDecoration: 'underline'
+                              }
+                            }}
+                          >
+                            {file.filename}
+                          </Button>
+                        }
+                        secondary={
+                          <Box>
+                            <Typography variant="body2" component="span">
+                              {formatFileSize(file.size)} • {file.type} • 
+                              Created {new Date(file.created).toLocaleDateString()} at {new Date(file.created).toLocaleTimeString()}
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                      <ListItemSecondaryAction>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Tooltip title="Preview">
+                            <IconButton
+                              edge="end"
+                              onClick={() => handlePreviewFile(file)}
+                            >
+                              <SearchIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Download">
+                            <IconButton
+                              edge="end"
+                              onClick={() => window.open(file.downloadUrl, '_blank')}
+                            >
+                              <DownloadIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              edge="end"
+                              onClick={() => deleteFile(file.filename)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  ))}
+                </List>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {/* Files List */}
+        {currentFolder && (
+          <Grid item xs={12}>
+            {/* Subfolders Section */}
+            {filteredSubfolders.length > 0 && (
+              <Card sx={{ mb: 2 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Subfolders ({filteredSubfolders.length})
+                  </Typography>
+                  <List>
+                    {filteredSubfolders.map((subfolder) => (
+                      <ListItem
+                        key={subfolder.id}
+                        button
+                        onClick={() => setCurrentFolder(subfolder.path)}
+                      >
+                        <ListItemIcon>
+                          <FolderIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={subfolder.name}
+                          secondary={`${subfolder.fileCount || 0} files • Created ${new Date(subfolder.created).toLocaleDateString()}`}
+                        />
+                        <ListItemSecondaryAction>
+                          <IconButton
+                            edge="end"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteFolder(subfolder.path);
+                            }}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </ListItemSecondaryAction>
+                      </ListItem>
+                    ))}
+                  </List>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Files Section */}
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">
+                    Files in {currentFolder} ({filteredFiles.length})
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    onClick={() => setCurrentFolder('')}
+                  >
+                    Back to Folders
+                  </Button>
+                </Box>
+                <List>
+                  {filteredFiles.map((file) => (
+                    <ListItem key={file.filename}>
+                      <ListItemIcon>
+                        {getFileIcon(file.type)}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Button
+                            variant="text"
+                            onClick={() => handlePreviewFile(file)}
+                            sx={{ 
+                              textTransform: 'none', 
+                              justifyContent: 'flex-start',
+                              p: 0,
+                              minWidth: 'auto',
+                              color: 'text.primary',
+                              '&:hover': {
+                                backgroundColor: 'transparent',
+                                textDecoration: 'underline'
+                              }
+                            }}
+                          >
+                            {file.filename}
+                          </Button>
+                        }
+                        secondary={
+                          <Box>
+                            <Typography variant="body2" component="span">
+                              {formatFileSize(file.size)} • {file.type} • 
+                              Created {new Date(file.created).toLocaleDateString()} at {new Date(file.created).toLocaleTimeString()}
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                      <ListItemSecondaryAction>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Tooltip title="Preview">
+                            <IconButton
+                              edge="end"
+                              onClick={() => handlePreviewFile(file)}
+                            >
+                              <SearchIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Download">
+                            <IconButton
+                              edge="end"
+                              onClick={() => window.open(file.downloadUrl, '_blank')}
+                            >
+                              <DownloadIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              edge="end"
+                              onClick={() => deleteFile(file.filename)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  ))}
+                  {filteredFiles.length === 0 && !loading && (
+                    <ListItem>
+                      <ListItemText
+                        primary="No files found"
+                        secondary="Upload files using the drag & drop area above"
+                      />
+                    </ListItem>
+                  )}
+                </List>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+      </Grid>
 
       {/* Create Folder Dialog */}
-      <Dialog
-        open={showCreateDialog}
-        onClose={() => setShowCreateDialog(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          Create New Folder
-        </DialogTitle>
+      <Dialog open={createFolderOpen} onClose={() => setCreateFolderOpen(false)}>
+        <DialogTitle>Create New Folder</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -490,67 +705,40 @@ const FolderManager: React.FC = () => {
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
-                handleCreateFolder();
+                createFolder();
               }
             }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowCreateDialog(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreateFolder}
-            variant="contained"
-            disabled={!newFolderName.trim()}
-          >
+          <Button onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
+          <Button onClick={createFolder} variant="contained">
             Create
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Upload Dialog */}
-      <Dialog
-        open={showUploadDialog}
-        onClose={() => setShowUploadDialog(false)}
-        maxWidth="sm"
-        fullWidth
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={() => setSnackbarOpen(false)}
       >
-        <DialogTitle>
-          Upload Files
-        </DialogTitle>
-        <DialogContent>
-          <Alert severity="info" sx={{ mb: 2 }}>
-            File upload functionality will be implemented here.
-          </Alert>
-          <Box
-            sx={{
-              border: '2px dashed',
-              borderColor: 'divider',
-              borderRadius: 1,
-              p: 4,
-              textAlign: 'center',
-              backgroundColor: 'action.hover',
-            }}
-          >
-            <UploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h6" color="text.secondary">
-              Drag and drop files here
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              or click to browse
-            </Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowUploadDialog(false)}>
-            Cancel
-          </Button>
-          <Button variant="contained">
-            Upload
-          </Button>
-        </DialogActions>
-      </Dialog>
+        <Alert
+          onClose={() => setSnackbarOpen(false)}
+          severity={snackbarSeverity}
+          sx={{ width: '100%' }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+
+      {/* File Preview Component */}
+      <FilePreview
+        open={previewOpen}
+        onClose={handleClosePreview}
+        file={previewFile}
+      />
     </Box>
   );
 };
