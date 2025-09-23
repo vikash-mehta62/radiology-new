@@ -33,6 +33,7 @@ const WorkflowTestPage = lazy(() => import('./pages/WorkflowTestPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DebugReports = lazy(() => import('./pages/DebugReports'));
 const Reports = lazy(() => import('./pages/Reports'));
+const DeviceDiscovery = lazy(() => import('./pages/DeviceDiscovery'));
 
 // Theme is now handled by ThemeProvider context
 
@@ -148,6 +149,17 @@ function App() {
                     element={
                       shouldAuthenticate ? (
                         <StudyList />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    }
+                  />
+                  
+                  <Route
+                    path="/device-discovery"
+                    element={
+                      shouldAuthenticate ? (
+                        <DeviceDiscovery />
                       ) : (
                         <Navigate to="/login" replace />
                       )

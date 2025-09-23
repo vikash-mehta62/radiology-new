@@ -1,87 +1,42 @@
 /**
- * 3D Navigation Controls Component
- * Provides comprehensive 3D navigation controls for volume rendering and MPR views
- * Features:
- * - 3D rotation controls (pitch, yaw, roll)
- * - Opacity and transparency controls
- * - Slice navigation for MPR views
- * - Preset viewing angles (axial, sagittal, coronal)
- * - Volume rendering parameters
- * - Clipping plane controls
- * - Animation controls for smooth transitions
+ * Navigation3D Controls Component
+ * Production-ready 3D navigation controls with real-time rendering integration
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   Box, Typography, Paper, Slider, IconButton, Button,
-  FormControlLabel, Switch, Divider, Grid, Card, CardContent,
-  ButtonGroup, Tooltip, Accordion, AccordionSummary, AccordionDetails,
+  FormControlLabel, Switch, Divider, Grid, ButtonGroup,
+  Tooltip, Accordion, AccordionSummary, AccordionDetails,
   Select, MenuItem, FormControl, InputLabel, Chip, Stack
 } from '@mui/material';
 import {
   RotateLeft, RotateRight, FlipCameraAndroid, ThreeDRotation,
-  Visibility, VisibilityOff, Opacity, Layers, ViewInAr,
-  ExpandMore, PlayArrow, Pause, RestartAlt, Speed,
-  CropFree, FilterVintage, Tune, AutoAwesome, Settings,
-  Navigation, Explore, CameraAlt, Movie, Timeline
+  Opacity as OpacityIcon, Layers, ExpandMore, PlayArrow, Pause,
+  RestartAlt
 } from '@mui/icons-material';
 
-export interface Navigation3DState {
-  // Rotation angles in degrees
-  pitch: number;  // X-axis rotation
-  yaw: number;    // Y-axis rotation  
-  roll: number;   // Z-axis rotation
-  
-  // Opacity and rendering
-  opacity: number;
-  volumeOpacity: number;
-  surfaceOpacity: number;
-  
-  // Slice positions for MPR
-  axialSlice: number;
-  sagittalSlice: number;
-  coronalSlice: number;
-  
-  // Clipping planes
-  clipNear: number;
-  clipFar: number;
-  
-  // Rendering mode
-  renderingMode: '3d' | 'mpr' | 'volume' | 'surface';
-  
-  // Animation
-  isAnimating: boolean;
-  animationSpeed: number;
-  
-  // View presets
-  currentPreset: string;
-}
+// Import centralized types and helpers
+import {
+  Navigation3DState,
+  MaxSlices,
+  createCompleteNavigation3DState,
+  getDefaultNavigation3DState,
+  safeNumberValue,
+  VIEW_PRESETS
+} from './types/Navigation3DTypes';
 
 export interface Navigation3DControlsProps {
   state: Navigation3DState;
   onStateChange: (updates: Partial<Navigation3DState>) => void;
-  maxSlices: {
-    axial: number;
-    sagittal: number;
-    coronal: number;
-  };
+  maxSlices: MaxSlices;
   enableVolumeRendering?: boolean;
   enableMPR?: boolean;
   enableAnimation?: boolean;
   onPresetApply?: (preset: string) => void;
   onReset?: () => void;
+  onRenderingUpdate?: (state: Navigation3DState) => void; // New: Real-time rendering callback
 }
-
-const viewPresets = [
-  { id: 'anterior', name: 'Anterior', pitch: 0, yaw: 0, roll: 0 },
-  { id: 'posterior', name: 'Posterior', pitch: 0, yaw: 180, roll: 0 },
-  { id: 'left-lateral', name: 'Left Lateral', pitch: 0, yaw: -90, roll: 0 },
-  { id: 'right-lateral', name: 'Right Lateral', pitch: 0, yaw: 90, roll: 0 },
-  { id: 'superior', name: 'Superior', pitch: -90, yaw: 0, roll: 0 },
-  { id: 'inferior', name: 'Inferior', pitch: 90, yaw: 0, roll: 0 },
-  { id: 'oblique-1', name: 'Oblique 1', pitch: -30, yaw: 45, roll: 0 },
-  { id: 'oblique-2', name: 'Oblique 2', pitch: 30, yaw: -45, roll: 0 }
-];
 
 export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
   state,
@@ -91,26 +46,73 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
   enableMPR = true,
   enableAnimation = true,
   onPresetApply,
-  onReset
+  onReset,
+  onRenderingUpdate
 }) => {
   const [expandedPanel, setExpandedPanel] = useState<string>('rotation');
 
-  const handleRotationChange = useCallback((axis: 'pitch' | 'yaw' | 'roll', value: number) => {
-    onStateChange({ [axis]: value });
-  }, [onStateChange]);
+  // Ensure we always have a complete state - never work with partial state
+  const completeState = createCompleteNavigation3DState(state, maxSlices);
 
-  const handleOpacityChange = useCallback((type: 'opacity' | 'volumeOpacity' | 'surfaceOpacity', value: number) => {
-    onStateChange({ [type]: value });
-  }, [onStateChange]);
+  // Trigger rendering update whenever state changes
+  useEffect(() => {
+    if (onRenderingUpdate) {
+      onRenderingUpdate(completeState);
+    }
+  }, [completeState, onRenderingUpdate]);
 
-  const handleSliceChange = useCallback((plane: 'axialSlice' | 'sagittalSlice' | 'coronalSlice', value: number) => {
-    onStateChange({ [plane]: value });
-  }, [onStateChange]);
+  // Safe state update helper - always sends complete partial updates
+  const updateState = useCallback((updates: Partial<Navigation3DState>) => {
+    console.log('🔄 Navigation3D state update:', updates);
+    console.log('🔄 Current complete state:', completeState);
+    onStateChange(updates);
+  }, [onStateChange, completeState]);
 
+  // Rotation controls with real-time updates
+  const handleRotationChange = useCallback((axis: 'pitch' | 'yaw' | 'roll', value: number | number[]) => {
+    const numValue = safeNumberValue(value);
+    const clampedValue = Math.max(-180, Math.min(180, numValue));
+    console.log(`🎯 Rotation change: ${axis} = ${clampedValue}°`);
+    updateState({ [axis]: clampedValue });
+  }, [updateState]);
+
+  const handleQuickRotation = useCallback((axis: 'pitch' | 'yaw' | 'roll', increment: number) => {
+    const currentValue = completeState[axis];
+    const newValue = currentValue + increment;
+    const clampedValue = Math.max(-180, Math.min(180, newValue));
+    updateState({ [axis]: clampedValue });
+  }, [completeState, updateState]);
+
+  // Opacity controls with real-time updates
+  const handleOpacityChange = useCallback((type: 'opacity' | 'volumeOpacity' | 'surfaceOpacity', value: number | number[]) => {
+    const numValue = safeNumberValue(value);
+    const clampedValue = Math.max(0, Math.min(1, numValue));
+    updateState({ [type]: clampedValue });
+  }, [updateState]);
+
+  // Slice controls with bounds checking
+  const handleSliceChange = useCallback((plane: 'axialSlice' | 'sagittalSlice' | 'coronalSlice', value: number | number[]) => {
+    const numValue = safeNumberValue(value);
+    const maxValue = plane === 'axialSlice' ? maxSlices.axial - 1 :
+      plane === 'sagittalSlice' ? maxSlices.sagittal - 1 :
+        maxSlices.coronal - 1;
+    const clampedValue = Math.max(0, Math.min(maxValue, Math.floor(numValue)));
+    updateState({ [plane]: clampedValue });
+  }, [maxSlices, updateState]);
+
+  // Clipping plane controls
+  const handleClippingChange = useCallback((type: 'clipNear' | 'clipFar', value: number | number[]) => {
+    const numValue = safeNumberValue(value);
+    const clampedValue = Math.max(0, Math.min(100, numValue));
+    updateState({ [type]: clampedValue });
+  }, [updateState]);
+
+  // Preset selection with complete state application
   const handlePresetSelect = useCallback((presetId: string) => {
-    const preset = viewPresets.find(p => p.id === presetId);
+    const preset = VIEW_PRESETS.find(p => p.id === presetId);
     if (preset) {
-      onStateChange({
+      console.log(`🎯 Applying preset: ${preset.name}`);
+      updateState({
         pitch: preset.pitch,
         yaw: preset.yaw,
         roll: preset.roll,
@@ -118,39 +120,38 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
       });
       onPresetApply?.(presetId);
     }
-  }, [onStateChange, onPresetApply]);
+  }, [updateState, onPresetApply]);
 
+  // Rendering mode change
   const handleRenderingModeChange = useCallback((mode: Navigation3DState['renderingMode']) => {
-    onStateChange({ renderingMode: mode });
-  }, [onStateChange]);
+    console.log(`🎨 Changing rendering mode to: ${mode}`);
+    updateState({ renderingMode: mode });
+  }, [updateState]);
 
+  // Animation controls
   const handleAnimationToggle = useCallback(() => {
-    onStateChange({ isAnimating: !state.isAnimating });
-  }, [state.isAnimating, onStateChange]);
+    const newAnimationState = !completeState.isAnimating;
+    console.log(`🎬 Animation ${newAnimationState ? 'started' : 'stopped'}`);
+    updateState({ isAnimating: newAnimationState });
+  }, [completeState.isAnimating, updateState]);
 
+  const handleAnimationSpeedChange = useCallback((value: number | number[]) => {
+    const numValue = safeNumberValue(value);
+    const clampedValue = Math.max(0.1, Math.min(3, numValue));
+    updateState({ animationSpeed: clampedValue });
+  }, [updateState]);
+
+  // Reset to defaults
   const handleReset = useCallback(() => {
-    const resetState: Partial<Navigation3DState> = {
-      pitch: 0,
-      yaw: 0,
-      roll: 0,
-      opacity: 1,
-      volumeOpacity: 0.8,
-      surfaceOpacity: 1,
-      axialSlice: Math.floor(maxSlices.axial / 2),
-      sagittalSlice: Math.floor(maxSlices.sagittal / 2),
-      coronalSlice: Math.floor(maxSlices.coronal / 2),
-      clipNear: 0,
-      clipFar: 100,
-      renderingMode: '3d',
-      isAnimating: false,
-      animationSpeed: 1,
-      currentPreset: 'anterior'
-    };
-    onStateChange(resetState);
+    console.log('🔄 Resetting Navigation3D to defaults');
+    const defaultState = getDefaultNavigation3DState(maxSlices);
+    // Send the complete default state as partial update
+    updateState(defaultState);
     onReset?.();
-  }, [maxSlices, onStateChange, onReset]);
+  }, [maxSlices, updateState, onReset]);
 
-  const handlePanelChange = useCallback((panel: string) => (event: React.SyntheticEvent, isExpanded: boolean) => {
+  // Panel expansion control
+  const handlePanelChange = useCallback((panel: string) => (_event: React.SyntheticEvent, isExpanded: boolean) => {
     setExpandedPanel(isExpanded ? panel : '');
   }, []);
 
@@ -158,15 +159,22 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
     <Paper sx={{ width: 320, height: '100%', overflow: 'auto' }}>
       <Box sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <ThreeDRotation color="primary" />
+          <ThreeDRotation />
           3D Navigation
+          <Chip
+            label="ACTIVE"
+            size="small"
+            color="success"
+            sx={{ ml: 1, fontSize: '0.6rem' }}
+          />
         </Typography>
 
         {/* Rendering Mode Selection */}
         <FormControl fullWidth sx={{ mb: 2 }}>
-          <InputLabel>Rendering Mode</InputLabel>
+          <InputLabel id="nav3d-rendering-mode-label">Rendering Mode</InputLabel>
           <Select
-            value={state.renderingMode}
+            labelId="nav3d-rendering-mode-label"
+            value={completeState.renderingMode}
             label="Rendering Mode"
             onChange={(e) => handleRenderingModeChange(e.target.value as Navigation3DState['renderingMode'])}
           >
@@ -179,105 +187,94 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
 
         {/* View Presets */}
         <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            View Presets
-          </Typography>
+          <Typography variant="subtitle2" gutterBottom>View Presets</Typography>
           <Grid container spacing={1}>
-            {viewPresets.map((preset) => (
+            {VIEW_PRESETS.map((preset) => (
               <Grid item xs={6} key={preset.id}>
-                <Button
-                  size="small"
-                  variant={state.currentPreset === preset.id ? "contained" : "outlined"}
-                  onClick={() => handlePresetSelect(preset.id)}
-                  fullWidth
-                  sx={{ fontSize: '0.75rem' }}
-                >
-                  {preset.name}
-                </Button>
+                <Tooltip title={preset.description || preset.name}>
+                  <Button
+                    size="small"
+                    variant={completeState.currentPreset === preset.id ? 'contained' : 'outlined'}
+                    onClick={() => handlePresetSelect(preset.id)}
+                    fullWidth
+                    sx={{ fontSize: '0.75rem' }}
+                  >
+                    {preset.name}
+                  </Button>
+                </Tooltip>
               </Grid>
             ))}
           </Grid>
         </Box>
 
         {/* Rotation Controls */}
-        <Accordion 
-          expanded={expandedPanel === 'rotation'} 
-          onChange={handlePanelChange('rotation')}
-        >
+        <Accordion expanded={expandedPanel === 'rotation'} onChange={handlePanelChange('rotation')}>
           <AccordionSummary expandIcon={<ExpandMore />}>
             <Typography variant="subtitle2">
-              <ThreeDRotation sx={{ mr: 1, verticalAlign: 'middle' }} />
+              <ThreeDRotation sx={{ mr: 1 }} />
               Rotation Controls
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
             <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Pitch (X-axis): {state.pitch}°
-              </Typography>
+              <Typography variant="body2">Pitch (X-axis): {completeState.pitch}°</Typography>
               <Slider
-                value={state.pitch}
-                onChange={(_, value) => handleRotationChange('pitch', value as number)}
+                value={completeState.pitch}
+                onChange={(_, v) => handleRotationChange('pitch', v)}
                 min={-180}
                 max={180}
                 step={1}
                 marks={[
-                  { value: -90, label: '-90°' },
+                  { value: -180, label: '-180°' },
                   { value: 0, label: '0°' },
-                  { value: 90, label: '90°' }
+                  { value: 180, label: '180°' }
                 ]}
               />
             </Box>
-
             <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Yaw (Y-axis): {state.yaw}°
-              </Typography>
+              <Typography variant="body2">Yaw (Y-axis): {completeState.yaw}°</Typography>
               <Slider
-                value={state.yaw}
-                onChange={(_, value) => handleRotationChange('yaw', value as number)}
+                value={completeState.yaw}
+                onChange={(_, v) => handleRotationChange('yaw', v)}
                 min={-180}
                 max={180}
                 step={1}
                 marks={[
-                  { value: -90, label: '-90°' },
+                  { value: -180, label: '-180°' },
                   { value: 0, label: '0°' },
-                  { value: 90, label: '90°' }
+                  { value: 180, label: '180°' }
                 ]}
               />
             </Box>
-
             <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Roll (Z-axis): {state.roll}°
-              </Typography>
+              <Typography variant="body2">Roll (Z-axis): {completeState.roll}°</Typography>
               <Slider
-                value={state.roll}
-                onChange={(_, value) => handleRotationChange('roll', value as number)}
+                value={completeState.roll}
+                onChange={(_, v) => handleRotationChange('roll', v)}
                 min={-180}
                 max={180}
                 step={1}
                 marks={[
-                  { value: -90, label: '-90°' },
+                  { value: -180, label: '-180°' },
                   { value: 0, label: '0°' },
-                  { value: 90, label: '90°' }
+                  { value: 180, label: '180°' }
                 ]}
               />
             </Box>
 
             <ButtonGroup variant="outlined" size="small" fullWidth>
-              <Tooltip title="Rotate Left">
-                <IconButton onClick={() => handleRotationChange('yaw', state.yaw - 15)}>
+              <Tooltip title="Rotate Left 15°">
+                <IconButton onClick={() => handleQuickRotation('yaw', -15)}>
                   <RotateLeft />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Rotate Right">
-                <IconButton onClick={() => handleRotationChange('yaw', state.yaw + 15)}>
+              <Tooltip title="Rotate Right 15°">
+                <IconButton onClick={() => handleQuickRotation('yaw', 15)}>
                   <RotateRight />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Flip View">
-                <IconButton onClick={() => handleRotationChange('pitch', state.pitch + 180)}>
+              <Tooltip title="Flip View 180°">
+                <IconButton onClick={() => handleQuickRotation('pitch', 180)}>
                   <FlipCameraAndroid />
                 </IconButton>
               </Tooltip>
@@ -286,24 +283,19 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
         </Accordion>
 
         {/* Opacity Controls */}
-        <Accordion 
-          expanded={expandedPanel === 'opacity'} 
-          onChange={handlePanelChange('opacity')}
-        >
+        <Accordion expanded={expandedPanel === 'opacity'} onChange={handlePanelChange('opacity')}>
           <AccordionSummary expandIcon={<ExpandMore />}>
             <Typography variant="subtitle2">
-              <Opacity sx={{ mr: 1, verticalAlign: 'middle' }} />
+              <OpacityIcon sx={{ mr: 1 }} />
               Opacity & Transparency
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
             <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Overall Opacity: {Math.round(state.opacity * 100)}%
-              </Typography>
+              <Typography variant="body2">Overall Opacity: {Math.round(completeState.opacity * 100)}%</Typography>
               <Slider
-                value={state.opacity}
-                onChange={(_, value) => handleOpacityChange('opacity', value as number)}
+                value={completeState.opacity}
+                onChange={(_, v) => handleOpacityChange('opacity', v)}
                 min={0}
                 max={1}
                 step={0.01}
@@ -314,29 +306,23 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
                 ]}
               />
             </Box>
-
             {enableVolumeRendering && (
               <>
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" gutterBottom>
-                    Volume Opacity: {Math.round(state.volumeOpacity * 100)}%
-                  </Typography>
+                  <Typography variant="body2">Volume Opacity: {Math.round(completeState.volumeOpacity * 100)}%</Typography>
                   <Slider
-                    value={state.volumeOpacity}
-                    onChange={(_, value) => handleOpacityChange('volumeOpacity', value as number)}
+                    value={completeState.volumeOpacity}
+                    onChange={(_, v) => handleOpacityChange('volumeOpacity', v)}
                     min={0}
                     max={1}
                     step={0.01}
                   />
                 </Box>
-
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" gutterBottom>
-                    Surface Opacity: {Math.round(state.surfaceOpacity * 100)}%
-                  </Typography>
+                  <Typography variant="body2">Surface Opacity: {Math.round(completeState.surfaceOpacity * 100)}%</Typography>
                   <Slider
-                    value={state.surfaceOpacity}
-                    onChange={(_, value) => handleOpacityChange('surfaceOpacity', value as number)}
+                    value={completeState.surfaceOpacity}
+                    onChange={(_, v) => handleOpacityChange('surfaceOpacity', v)}
                     min={0}
                     max={1}
                     step={0.01}
@@ -347,52 +333,46 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
           </AccordionDetails>
         </Accordion>
 
-        {/* MPR Slice Controls */}
+        {/* MPR Slice Navigation */}
         {enableMPR && (
-          <Accordion 
-            expanded={expandedPanel === 'slices'} 
-            onChange={handlePanelChange('slices')}
-          >
+          <Accordion expanded={expandedPanel === 'slices'} onChange={handlePanelChange('slices')}>
             <AccordionSummary expandIcon={<ExpandMore />}>
               <Typography variant="subtitle2">
-                <Layers sx={{ mr: 1, verticalAlign: 'middle' }} />
+                <Layers sx={{ mr: 1 }} />
                 MPR Slice Navigation
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
               <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" gutterBottom>
-                  Axial Slice: {state.axialSlice} / {maxSlices.axial}
-                </Typography>
+                <Typography variant="body2">Axial Slice: {completeState.axialSlice} / {maxSlices.axial - 1}</Typography>
                 <Slider
-                  value={state.axialSlice}
-                  onChange={(_, value) => handleSliceChange('axialSlice', value as number)}
+                  value={completeState.axialSlice}
+                  onChange={(_, v) => handleSliceChange('axialSlice', v)}
                   min={0}
                   max={maxSlices.axial - 1}
                   step={1}
+                  marks={maxSlices.axial <= 10 ? undefined : [
+                    { value: 0, label: '0' },
+                    { value: Math.floor((maxSlices.axial - 1) / 2), label: 'Mid' },
+                    { value: maxSlices.axial - 1, label: `${maxSlices.axial - 1}` }
+                  ]}
                 />
               </Box>
-
               <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" gutterBottom>
-                  Sagittal Slice: {state.sagittalSlice} / {maxSlices.sagittal}
-                </Typography>
+                <Typography variant="body2">Sagittal Slice: {completeState.sagittalSlice} / {maxSlices.sagittal - 1}</Typography>
                 <Slider
-                  value={state.sagittalSlice}
-                  onChange={(_, value) => handleSliceChange('sagittalSlice', value as number)}
+                  value={completeState.sagittalSlice}
+                  onChange={(_, v) => handleSliceChange('sagittalSlice', v)}
                   min={0}
                   max={maxSlices.sagittal - 1}
                   step={1}
                 />
               </Box>
-
               <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" gutterBottom>
-                  Coronal Slice: {state.coronalSlice} / {maxSlices.coronal}
-                </Typography>
+                <Typography variant="body2">Coronal Slice: {completeState.coronalSlice} / {maxSlices.coronal - 1}</Typography>
                 <Slider
-                  value={state.coronalSlice}
-                  onChange={(_, value) => handleSliceChange('coronalSlice', value as number)}
+                  value={completeState.coronalSlice}
+                  onChange={(_, v) => handleSliceChange('coronalSlice', v)}
                   min={0}
                   max={maxSlices.coronal - 1}
                   step={1}
@@ -402,41 +382,43 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
           </Accordion>
         )}
 
-        {/* Clipping Controls */}
-        <Accordion 
-          expanded={expandedPanel === 'clipping'} 
-          onChange={handlePanelChange('clipping')}
-        >
+        {/* Clipping Planes */}
+        <Accordion expanded={expandedPanel === 'clipping'} onChange={handlePanelChange('clipping')}>
           <AccordionSummary expandIcon={<ExpandMore />}>
             <Typography variant="subtitle2">
-              <CropFree sx={{ mr: 1, verticalAlign: 'middle' }} />
+              <RestartAlt sx={{ mr: 1 }} />
               Clipping Planes
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
             <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Near Clipping: {state.clipNear}%
-              </Typography>
+              <Typography variant="body2">Near Clipping: {completeState.clipNear}%</Typography>
               <Slider
-                value={state.clipNear}
-                onChange={(_, value) => onStateChange({ clipNear: value as number })}
+                value={completeState.clipNear}
+                onChange={(_, v) => handleClippingChange('clipNear', v)}
                 min={0}
                 max={100}
                 step={1}
+                marks={[
+                  { value: 0, label: '0%' },
+                  { value: 50, label: '50%' },
+                  { value: 100, label: '100%' }
+                ]}
               />
             </Box>
-
             <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" gutterBottom>
-                Far Clipping: {state.clipFar}%
-              </Typography>
+              <Typography variant="body2">Far Clipping: {completeState.clipFar}%</Typography>
               <Slider
-                value={state.clipFar}
-                onChange={(_, value) => onStateChange({ clipFar: value as number })}
+                value={completeState.clipFar}
+                onChange={(_, v) => handleClippingChange('clipFar', v)}
                 min={0}
                 max={100}
                 step={1}
+                marks={[
+                  { value: 0, label: '0%' },
+                  { value: 50, label: '50%' },
+                  { value: 100, label: '100%' }
+                ]}
               />
             </Box>
           </AccordionDetails>
@@ -444,56 +426,47 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
 
         {/* Animation Controls */}
         {enableAnimation && (
-          <Accordion 
-            expanded={expandedPanel === 'animation'} 
-            onChange={handlePanelChange('animation')}
-          >
+          <Accordion expanded={expandedPanel === 'animation'} onChange={handlePanelChange('animation')}>
             <AccordionSummary expandIcon={<ExpandMore />}>
-              <Typography variant="subtitle2">
-                <Movie sx={{ mr: 1, verticalAlign: 'middle' }} />
-                Animation Controls
-              </Typography>
+              <Typography variant="subtitle2">Animation Controls</Typography>
             </AccordionSummary>
             <AccordionDetails>
               <Box sx={{ mb: 2 }}>
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={state.isAnimating}
+                      checked={completeState.isAnimating}
                       onChange={handleAnimationToggle}
                     />
                   }
                   label="Enable Animation"
                 />
               </Box>
-
               <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" gutterBottom>
-                  Animation Speed: {state.animationSpeed}x
-                </Typography>
+                <Typography variant="body2">Animation Speed: {completeState.animationSpeed}x</Typography>
                 <Slider
-                  value={state.animationSpeed}
-                  onChange={(_, value) => onStateChange({ animationSpeed: value as number })}
+                  value={completeState.animationSpeed}
+                  onChange={(_, v) => handleAnimationSpeedChange(v)}
                   min={0.1}
                   max={3}
                   step={0.1}
+                  disabled={!completeState.isAnimating}
                   marks={[
-                    { value: 0.5, label: '0.5x' },
+                    { value: 0.1, label: '0.1x' },
                     { value: 1, label: '1x' },
-                    { value: 2, label: '2x' }
+                    { value: 3, label: '3x' }
                   ]}
-                  disabled={!state.isAnimating}
                 />
               </Box>
 
               <ButtonGroup variant="outlined" size="small" fullWidth>
-                <Tooltip title={state.isAnimating ? "Pause" : "Play"}>
+                <Tooltip title={completeState.isAnimating ? 'Pause Animation' : 'Start Animation'}>
                   <IconButton onClick={handleAnimationToggle}>
-                    {state.isAnimating ? <Pause /> : <PlayArrow />}
+                    {completeState.isAnimating ? <Pause /> : <PlayArrow />}
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Reset Animation">
-                  <IconButton onClick={() => onStateChange({ isAnimating: false })}>
+                <Tooltip title="Stop Animation">
+                  <IconButton onClick={() => updateState({ isAnimating: false })}>
                     <RestartAlt />
                   </IconButton>
                 </Tooltip>
@@ -502,8 +475,9 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
           </Accordion>
         )}
 
-        {/* Action Buttons */}
         <Divider sx={{ my: 2 }} />
+
+        {/* Reset Button */}
         <Stack direction="row" spacing={1}>
           <Button
             variant="outlined"
@@ -521,21 +495,26 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
           <Typography variant="caption" color="text.secondary">
             Current State
           </Typography>
-          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-            <Chip 
-              label={`${state.renderingMode.toUpperCase()}`} 
-              size="small" 
-              color="primary" 
+          <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
+            <Chip
+              label={completeState.renderingMode.toUpperCase()}
+              size="small"
+              color="primary"
             />
-            <Chip 
-              label={`${Math.round(state.opacity * 100)}%`} 
-              size="small" 
+            <Chip
+              label={`${Math.round(completeState.opacity * 100)}%`}
+              size="small"
             />
-            {state.isAnimating && (
-              <Chip 
-                label="Animating" 
-                size="small" 
-                color="secondary" 
+            <Chip
+              label={completeState.currentPreset.toUpperCase()}
+              size="small"
+              variant="outlined"
+            />
+            {completeState.isAnimating && (
+              <Chip
+                label="ANIMATING"
+                size="small"
+                color="secondary"
               />
             )}
           </Stack>
@@ -546,3 +525,15 @@ export const Navigation3DControls: React.FC<Navigation3DControlsProps> = ({
 };
 
 export default Navigation3DControls;
+
+// Export the types and helpers for use by parent components
+export type {
+  Navigation3DState
+} from './types/Navigation3DTypes';
+
+export {
+  createCompleteNavigation3DState,
+  getDefaultNavigation3DState,
+  applyViewPreset,
+  VIEW_PRESETS
+} from './types/Navigation3DTypes';

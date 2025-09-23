@@ -37,6 +37,7 @@ import {
   MonitorHeart as MonitoringIcon,
   BugReport as ErrorIcon,
   Circle as CircleIcon,
+  DeviceHub as DeviceHubIcon,
 } from '@mui/icons-material';
 
 import { useAuth } from '../../hooks/useAuth';
@@ -73,6 +74,13 @@ const Sidebar: React.FC<SidebarProps> = ({ onItemClick }) => {
       path: '/studies',
       badge: '23',
       description: 'DICOM studies and imaging',
+    },
+    {
+      text: 'Device Discovery',
+      icon: <DeviceHubIcon />,
+      path: '/device-discovery',
+      badge: null,
+      description: 'Medical device discovery and management',
     },
     {
       text: 'Folders',

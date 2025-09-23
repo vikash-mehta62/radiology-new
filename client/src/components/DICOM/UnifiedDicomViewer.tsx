@@ -49,7 +49,19 @@ import DicomOverlay from './components/DicomOverlay';
 import DicomToolbar from './components/DicomToolbar';
 import AnnotationTools, { Annotation as ToolsAnnotation } from './AnnotationTools';
 import { AdvancedAnnotationPanel } from './AdvancedAnnotationPanel';
-import { Navigation3DControls, Navigation3DState } from './Navigation3DControls';
+import Navigation3DControls from './Navigation3DControls';
+import Navigation3DSimple from './Navigation3DSimple';
+import Navigation3DFixed from './Navigation3DFixed';
+import Navigation3DWorking from './Navigation3DWorking';
+import Navigation3DMainCanvas from './Navigation3DMainCanvas';
+import Navigation3DDiagnostic from './Navigation3DDiagnostic';
+import CanvasTest from './CanvasTest';
+import { 
+  Navigation3DState, 
+  getDefaultNavigation3DState, 
+  createCompleteNavigation3DState 
+} from './types/Navigation3DTypes';
+import { navigation3DRenderer } from './services/Navigation3DRenderer';
 import { AIEnhancementPanel } from './AIEnhancementPanel';
 import { AutoMeasurementCADOverlay } from './AutoMeasurementCADOverlay';
 import { TextAnnotationDrawingOverlay } from './TextAnnotationDrawingOverlay';
@@ -62,12 +74,12 @@ import { PerformanceMonitor } from '../../services/performanceMonitor';
 import { AIEnhancementModule, AIProcessingOptions, AIProcessingResult, DetectionResult } from '../../services/aiEnhancementModule';
 import { ImageEnhancementAlgorithms, EnhancementOptions, ContrastEnhancementOptions } from '../../services/imageEnhancementAlgorithms';
 import { AbnormalityDetectionService } from '../../services/abnormalityDetectionService';
-import { 
-  Annotation, 
-  AnnotationLayer, 
-  AnnotationGroup, 
+import {
+  Annotation,
+  AnnotationLayer,
+  AnnotationGroup,
   AnnotationTemplate,
-  AnnotationSystem 
+  AnnotationSystem
 } from '../../services/annotationSystem';
 import { useImageProcessingWorker } from '../../hooks/useImageProcessingWorker';
 import { PredictiveCacheService } from '../../services/predictiveCacheService';
@@ -77,6 +89,7 @@ import { ShaderOptimizer } from '../../services/shaderOptimizer';
 import { PerformanceTester } from '../../utils/performanceTester';
 import { MemoryMonitor } from '../../utils/memoryMonitor';
 import { LODControlPanel } from './LODControlPanel';
+import { gl } from 'date-fns/locale';
 
 // Enhanced props interface with performance optimization options
 interface UnifiedDicomViewerProps {
@@ -105,13 +118,13 @@ interface ViewerState {
   // Core state
   isLoading: boolean;
   error: string | null;
-  
+
   // Study metadata
   studyType: 'single-frame' | 'multi-frame' | 'volume' | 'series';
   modality: string;
   totalFrames: number;
   currentFrame: number;
-  
+
   // Image data management
   imageData: string[]; // Store all slice image data
   loadedImages: HTMLImageElement[]; // Store loaded image objects
@@ -121,7 +134,7 @@ interface ViewerState {
   thumbnailData: string | null; // Quick preview
   currentQuality: number; // Current image quality (0-100)
   targetQuality: number; // Target quality for progressive loading
-  
+
   // Viewport state
   zoom: number;
   pan: { x: number; y: number };
@@ -129,16 +142,16 @@ interface ViewerState {
   windowWidth: number;
   windowCenter: number;
   invert: boolean;
-  
+
   // UI state
   sidebarOpen: boolean;
   toolbarExpanded: boolean;
   fullscreen: boolean;
-  
+
   // Tools and annotations
   activeTool: string | null;
   measurements: any[];
-  
+
   // Performance metrics
   renderingMode: 'software' | 'webgl' | 'gpu';
   qualityLevel: 'low' | 'medium' | 'high' | 'diagnostic';
@@ -146,7 +159,7 @@ interface ViewerState {
   processingTime: number;
   networkProfile: string;
   memoryUsage: number;
-  
+
   // Annotation state
   annotations: Annotation[];
   annotationLayers: AnnotationLayer[];
@@ -159,13 +172,13 @@ interface ViewerState {
 
   // 3D Navigation state
   navigation3D: Navigation3DState;
-  
+
   // LOD control panel state
   lodPanelVisible: boolean;
-  
+
   // Zoom level for LOD calculations
   zoomLevel: number;
-  
+
   // AI Enhancement state
   aiEnhancementEnabled: boolean;
   enhancedImageData: ImageData | Float32Array | null;
@@ -214,12 +227,12 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isTablet = useMediaQuery(theme.breakpoints.down('lg'));
-  
+
   // Refs for DOM elements and services
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const webglContextRef = useRef<WebGLRenderingContext | null>(null);
-  
+
   // Service refs for performance optimization
   const progressiveLoaderRef = useRef<ProgressiveLoadingSystem | null>(null);
   const cacheManagerRef = useRef<IntelligentCacheManager | null>(null);
@@ -265,13 +278,13 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
     processingTime: 0,
     networkProfile: 'unknown',
     memoryUsage: 0,
-    
+
     // LOD control panel state
     lodPanelVisible: false,
-    
+
     // Zoom level for LOD calculations
     zoomLevel: 1.0,
-    
+
     // Annotation state
     annotations: [] as Annotation[],
     annotationLayers: [
@@ -330,24 +343,8 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
     annotationMode: false,
     selectedAnnotationTool: undefined,
 
-    // 3D Navigation state
-    navigation3D: {
-      pitch: 0,
-      yaw: 0,
-      roll: 0,
-      opacity: 1,
-      volumeOpacity: 0.8,
-      surfaceOpacity: 1,
-      axialSlice: 0,
-      sagittalSlice: 0,
-      coronalSlice: 0,
-      clipNear: 0,
-      clipFar: 100,
-      renderingMode: '3d',
-      isAnimating: false,
-      animationSpeed: 1,
-      currentPreset: 'anterior'
-    },
+    // 3D Navigation state - use complete state helper to ensure all keys are present
+    navigation3D: getDefaultNavigation3DState({ axial: 1, sagittal: 1, coronal: 1 }),
 
     // AI Enhancement state
     aiEnhancementEnabled: enableAI,
@@ -383,7 +380,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
     try {
       console.log('🔄 Generating volume data from image series...');
-      
+
       // Create volume data structure from loaded images
       const firstImageElement = state.loadedImages[0];
       if (!firstImageElement) return null;
@@ -546,20 +543,20 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       // Set up memory pressure monitoring
       memoryManagerRef.current.onMemoryPressure((pressure) => {
         console.log(`🧠 [UnifiedViewer] Memory pressure: ${pressure}`);
-        
+
         if (pressure === 'high' || pressure === 'critical') {
           // Trigger cache cleanup
           cacheManagerRef.current?.cleanup();
-          
+
           // Force LOD to lower quality
           if (lodRenderingRef.current && pressure === 'critical') {
             setState(prev => ({ ...prev, currentQuality: 25 })); // Set to low quality (25%)
           }
-          
+
           // Show performance notification
           setPerformanceNotification({
             open: true,
-            message: pressure === 'critical' 
+            message: pressure === 'critical'
               ? 'Critical memory usage detected. Reducing quality to maintain performance.'
               : 'High memory usage detected. Optimizing performance.',
             severity: pressure === 'critical' ? 'error' : 'warning'
@@ -600,18 +597,18 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       };
     }
   }, []);
-  
+
   // Calculate optimal batch size based on dataset characteristics
   const calculateOptimalBatchSize = useCallback((imageCount: number): number => {
     // For small datasets (≤10 slices), load all at once
     if (imageCount <= 10) return imageCount;
-    
+
     // For medium datasets (11-50 slices), use moderate batching
     if (imageCount <= 50) return Math.min(10, Math.ceil(imageCount / 3));
-    
+
     // For large datasets (51-100 slices), optimize for memory and performance
     if (imageCount <= 100) return Math.min(15, Math.ceil(imageCount / 5));
-    
+
     // For very large datasets (>100 slices), use aggressive batching
     return Math.min(20, Math.ceil(imageCount / 8));
   }, []);
@@ -620,14 +617,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   const studyAnalysis = useMemo(() => {
     const imageCount = study.study_statistics?.instance_count || 1;
     const modality = study.modality || 'CT';
-    
+
     let studyType: ViewerState['studyType'] = 'single-frame';
     if (imageCount > 100) {
       studyType = 'volume';
     } else if (imageCount > 1) {
       studyType = 'multi-frame';
     }
-    
+
     // Determine recommended tools based on modality and user role
     const recommendedTools = [];
     if (modality === 'CT' || modality === 'MR') {
@@ -636,7 +633,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
     if (userRole === 'radiologist') {
       recommendedTools.push('annotation', 'comparison', 'ai-analysis');
     }
-    
+
     // Determine optimal rendering strategy
     let renderingStrategy: ViewerState['renderingMode'] = 'software';
     if (enableWebGL && imageCount > 10) {
@@ -645,7 +642,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
     if (imageCount > 500) {
       renderingStrategy = 'gpu'; // For very large datasets
     }
-    
+
     return {
       studyType,
       imageCount,
@@ -670,10 +667,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
   const initializeViewer = useCallback(async () => {
     console.log('🚀 [UnifiedViewer] Initializing viewer for study:', study.id);
-    
-    setState(prev => ({ 
-      ...prev, 
-      isLoading: true, 
+
+    setState(prev => ({
+      ...prev,
+      isLoading: true,
       error: null,
       studyType: studyAnalysis.studyType,
       modality: studyAnalysis.modality,
@@ -688,47 +685,61 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         if (gl) {
           webglContextRef.current = gl as WebGLRenderingContext;
           console.log('✅ [UnifiedViewer] WebGL context initialized');
-          
-          // Initialize texture pool with WebGL context
-          if (memoryManagerRef.current) {
-            memoryManagerRef.current.initializeTexturePool(gl as WebGL2RenderingContext);
-            console.log('🎯 [UnifiedViewer] Texture pool initialized with WebGL context');
-          }
+        }
+      }
+
+      // Initialize 3D Navigation Renderer
+      if (canvasRef.current) {
+        const rendererInitialized = navigation3DRenderer.initialize(canvasRef.current);
+        if (rendererInitialized) {
+          console.log('✅ [UnifiedViewer] Navigation3D renderer initialized');
+          // Initial render with current navigation state
+          navigation3DRenderer.updateRendering(navigationState, state.imageData);
+        } else {
+          console.warn('⚠️ [UnifiedViewer] Failed to initialize Navigation3D renderer');
+        }
+
+        // Initialize texture pool with WebGL context if available
+        if (webglContextRef.current && memoryManagerRef.current) {
+          memoryManagerRef.current.initializeTexturePool(webglContextRef.current as WebGL2RenderingContext);
+          console.log('🎯 [UnifiedViewer] Texture pool initialized with WebGL context');
         } else {
           console.warn('⚠️ [UnifiedViewer] WebGL not supported, falling back to Canvas 2D');
           setState(prev => ({ ...prev, renderingMode: 'software' }));
         }
+      } else {
+        console.warn('⚠️ [UnifiedViewer] Canvas not available for renderer initialization');
       }
 
       // Load initial batch of images and set up proper frame count
       await loadBatch(0);
-      
+
       // For multi-frame studies, ensure we load enough batches to show all frames
       if (studyAnalysis.imageCount > state.batchSize) {
         console.log(`🔄 [UnifiedViewer] Multi-frame study detected: ${studyAnalysis.imageCount} frames, loading additional batches`);
-        
+
         // Load the first few batches to ensure smooth navigation
         const initialBatchesToLoad = Math.min(3, Math.ceil(studyAnalysis.imageCount / state.batchSize));
         for (let i = 1; i < initialBatchesToLoad; i++) {
           setTimeout(() => loadBatch(i), i * 200); // Stagger loading to avoid overwhelming
         }
       }
-      
+
       // Don't override totalFrames if it was already updated by dynamic slice detection
-      setState(prev => ({ 
-        ...prev, 
+      setState(prev => ({
+        ...prev,
         isLoading: false,
         // Only update totalFrames if it hasn't been updated by dynamic detection
         ...(prev.totalFrames === 1 ? { totalFrames: studyAnalysis.imageCount } : {})
       }));
 
       console.log('✅ [UnifiedViewer] Viewer initialized successfully');
-      
+
     } catch (error) {
       console.error('❌ [UnifiedViewer] Failed to initialize viewer:', error);
-      setState(prev => ({ 
-        ...prev, 
-        isLoading: false, 
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
         error: error instanceof Error ? error.message : 'Failed to initialize viewer'
       }));
       onError?.(error instanceof Error ? error.message : 'Failed to initialize viewer');
@@ -737,12 +748,12 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
   const loadImagesFromData = async (imageDataArray: string[]) => {
     console.log('📥 [UnifiedViewer] Loading images from data array, count:', imageDataArray.length);
-    
+
     try {
       // Process images in batches to avoid overwhelming the browser
       const batchSize = 5;
       const batches = [];
-      
+
       for (let i = 0; i < imageDataArray.length; i += batchSize) {
         batches.push(imageDataArray.slice(i, i + batchSize));
       }
@@ -754,17 +765,17 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
         console.log(`🔄 [UnifiedViewer] Processing batch ${batchIndex + 1}/${batches.length}`);
-        
+
         const batchPromises = batch.map(async (imageData, index) => {
           const globalIndex = batchIndex * batchSize + index;
-          
+
           try {
             // Handle different image data formats
             let processedData = imageData;
             if (!imageData.startsWith('data:')) {
               processedData = `data:image/png;base64,${imageData}`;
             }
-            
+
             return {
               index: globalIndex,
               data: processedData,
@@ -783,12 +794,12 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
         const batchResults = await Promise.all(batchPromises);
         allResults.push(...batchResults);
-        
+
         // Memory management for large datasets
         if (imageDataArray.length > 50) {
           // Clear processed batch data to free memory
           batch.length = 0;
-          
+
           // Force garbage collection hint for large datasets
           if (batchIndex % 3 === 0 && typeof window !== 'undefined' && 'gc' in window) {
             try {
@@ -798,7 +809,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             }
           }
         }
-        
+
         // Update progress
         const progress = ((batchIndex + 1) / batches.length) * 100;
         console.log(`📊 [UnifiedViewer] Progress: ${Math.round(progress)}%`);
@@ -841,14 +852,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       console.log(`✅ [UnifiedViewer] Successfully loaded ${successfulImages.length}/${imageDataArray.length} images`);
 
       // Run performance tests if all services are initialized
-      if (performanceTesterRef.current && 
-          memoryManagerRef.current && 
-          shaderOptimizerRef.current && 
-          webglContextRef.current &&
-          successfulImages.length > 0) {
-        
+      if (performanceTesterRef.current &&
+        memoryManagerRef.current &&
+        shaderOptimizerRef.current &&
+        webglContextRef.current &&
+        successfulImages.length > 0) {
+
         console.log('🧪 [UnifiedViewer] Running performance test suite...');
-        
+
         try {
           const testResults = await performanceTesterRef.current.runFullTestSuite(
             memoryManagerRef.current,
@@ -857,10 +868,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             renderWithWebGL,
             successfulImages[0] // Use first image for testing
           );
-          
+
           // Log detailed results
           console.log('🧪 [UnifiedViewer] Performance test results:', testResults);
-          
+
           // Show performance notification if any tests failed
           const failedTests = testResults.filter(r => !r.passed);
           if (failedTests.length > 0) {
@@ -885,18 +896,18 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       setTimeout(() => {
         if (memoryMonitorRef.current) {
           console.log('🧠 [UnifiedViewer] Starting memory monitoring validation...');
-          
+
           // Log initial memory summary
           memoryMonitorRef.current.logMemorySummary();
-          
+
           // Set up periodic memory analysis
           const memoryAnalysisInterval = setInterval(() => {
             if (memoryMonitorRef.current) {
               const analysis = memoryMonitorRef.current.analyzeMemoryUsage();
               const pressure = memoryMonitorRef.current.getMemoryPressure();
-              
+
               console.log(`🧠 [UnifiedViewer] Memory Analysis - Pressure: ${pressure}, Efficiency: ${(analysis.efficiency * 100).toFixed(1)}%`);
-              
+
               // Show warning if memory issues detected
               if (analysis.memoryLeaks || pressure === 'high' || pressure === 'critical') {
                 setPerformanceNotification({
@@ -907,7 +918,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               }
             }
           }, 30000); // Check every 30 seconds
-          
+
           // Clean up interval after 5 minutes
           setTimeout(() => {
             clearInterval(memoryAnalysisInterval);
@@ -1040,7 +1051,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
     // Priority-based preloading: next batches first, then previous
     const preloadQueue = [];
-    
+
     // Add next batches to queue (higher priority)
     for (let i = 1; i <= preloadDistance; i++) {
       const nextBatch = currentBatch + i;
@@ -1081,7 +1092,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   // Memory cleanup for large multi-slice studies
   const cleanupDistantBatches = useCallback((currentBatch: number, keepDistance: number) => {
     const batchesToRemove = [];
-    
+
     state.loadedBatches.forEach((_, batchIndex) => {
       const distance = Math.abs(batchIndex - currentBatch);
       if (distance > keepDistance) {
@@ -1091,14 +1102,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
     if (batchesToRemove.length > 0) {
       console.log(`🧹 [UnifiedViewer] Cleaning up ${batchesToRemove.length} distant batches:`, batchesToRemove);
-      
+
       setState(prev => {
         const newLoadedBatches = new Set(prev.loadedBatches);
         const newImageData = [...prev.imageData];
-        
+
         batchesToRemove.forEach(batchIndex => {
           newLoadedBatches.delete(batchIndex);
-          
+
           // Clear image data for this batch
           const startFrame = batchIndex * prev.batchSize;
           const endFrame = Math.min(startFrame + prev.batchSize, prev.totalFrames);
@@ -1136,19 +1147,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       // For the first batch, perform dynamic slice detection
       if (batchIndex === 0) {
         console.log('🔍 [UnifiedViewer] Performing dynamic slice detection for first batch');
-        
+
         // Call the enhanced slice detection endpoint
         const detectionUrl = `http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&auto_detect=true&t=${Date.now()}`;
-        
+
         try {
           const detectionResponse = await fetch(detectionUrl);
           if (detectionResponse.ok) {
             const detectionResult = await detectionResponse.json();
-            
+
             if (detectionResult.success && detectionResult.auto_detection_info) {
               const detectedSlices = detectionResult.auto_detection_info.total_slices;
               const detectionConfidence = detectionResult.auto_detection_info.confidence;
-              
+
               console.log('🎯 [UnifiedViewer] Dynamic slice detection result:', {
                 detectedSlices,
                 detectionMethod: detectionResult.auto_detection_info.detection_method,
@@ -1156,44 +1167,44 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 confidence: detectionConfidence,
                 pixelArrayShape: detectionResult.auto_detection_info.pixel_array_shape
               });
-              
+
               // Update totalFrames if detection is confident and different from current
               if (detectionConfidence > 0.7 && detectedSlices !== state.totalFrames) {
                 console.log(`🔄 [UnifiedViewer] Updating totalFrames from ${state.totalFrames} to ${detectedSlices} based on dynamic detection`);
-                console.log('🔍 [DEBUG] Current state before update:', { 
-                  totalFrames: state.totalFrames, 
+                console.log('🔍 [DEBUG] Current state before update:', {
+                  totalFrames: state.totalFrames,
                   studyType: state.studyType,
-                  currentFrame: state.currentFrame 
+                  currentFrame: state.currentFrame
                 });
-                
+
                 setState(prev => {
                   const studyType: 'single-frame' | 'multi-frame' | 'volume' | 'series' = detectedSlices > 1 ? 'multi-frame' : 'single-frame';
-                  const newState = { 
-                    ...prev, 
+                  const newState = {
+                    ...prev,
                     totalFrames: detectedSlices,
                     studyType: studyType
                   };
-                  console.log('🔍 [DEBUG] New state after update:', { 
-                    totalFrames: newState.totalFrames, 
+                  console.log('🔍 [DEBUG] New state after update:', {
+                    totalFrames: newState.totalFrames,
                     studyType: newState.studyType,
-                    currentFrame: newState.currentFrame 
+                    currentFrame: newState.currentFrame
                   });
                   return newState;
                 });
-                
+
                 // Force a re-render by updating a timestamp
                 setTimeout(() => {
-                  console.log('🔍 [DEBUG] State after timeout:', { 
-                    totalFrames: state.totalFrames, 
-                    studyType: state.studyType 
+                  console.log('🔍 [DEBUG] State after timeout:', {
+                    totalFrames: state.totalFrames,
+                    studyType: state.studyType
                   });
                 }, 100);
-                
+
                 // Update study analysis for better batch sizing
                 if (detectedSlices >= 96) {
                   console.log('🎯 [UnifiedViewer] Large multi-slice study detected (96+ slices), optimizing batch size');
-                  setState(prev => ({ 
-                    ...prev, 
+                  setState(prev => ({
+                    ...prev,
                     batchSize: Math.min(16, Math.max(8, Math.ceil(detectedSlices / 12))) // Adaptive batch size for large studies
                   }));
                 }
@@ -1245,7 +1256,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               if (!imageResponse.ok) {
                 throw new Error(`Failed to fetch image: ${imageResponse.status}`);
               }
-              
+
               const imageBlob = await imageResponse.blob();
               const imageDataUrl = await new Promise<string>((resolve) => {
                 const reader = new FileReader();
@@ -1293,9 +1304,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       setState(prev => {
         const newImageData = [...prev.imageData];
         const newLoadedImages = [...prev.loadedImages];
-        
+
         console.log(`🔍 [DEBUG] Before state update - imageData length: ${prev.imageData.length}`);
-        
+
         batchResults.forEach(result => {
           if (result.imageData) {
             newImageData[result.frameIndex] = result.imageData;
@@ -1323,7 +1334,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       });
 
       console.log(`✅ [UnifiedViewer] Successfully loaded batch ${batchIndex}`);
-      
+
       // Trigger displaySlice for the first frame if this is the first batch
       if (batchIndex === 0 && batchResults.some(r => r.imageData)) {
         console.log(`🎨 [DEBUG] Triggering displaySlice for frame 0 after loading first batch`);
@@ -1334,8 +1345,8 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
     } catch (error) {
       console.error(`❌ [UnifiedViewer] Failed to load batch ${batchIndex}:`, error);
-      setState(prev => ({ 
-        ...prev, 
+      setState(prev => ({
+        ...prev,
         isLoadingBatch: false,
         error: error instanceof Error ? error.message : 'Failed to load batch'
       }));
@@ -1345,7 +1356,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   // Enhanced displaySlice function with WebGL rendering and Canvas 2D fallback
   const displaySlice = async (frameIndex: number, imageDataArray?: string[]) => {
     const startTime = performance.now();
-    
+
     try {
       const canvas = canvasRef.current;
       if (!canvas) {
@@ -1355,11 +1366,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
       // Use provided imageDataArray or state imageData
       const imageData = imageDataArray || state.imageData;
-      
+
       console.log(`🔍 [DEBUG] displaySlice called with frameIndex: ${frameIndex}`);
       console.log(`🔍 [DEBUG] imageData array length: ${imageData.length}`);
       console.log(`🔍 [DEBUG] imageData[${frameIndex}]:`, imageData[frameIndex]);
-      
+
       if (!imageData[frameIndex]) {
         console.warn(`⚠️ [UnifiedViewer] No image data for frame ${frameIndex}`);
         console.log(`🔍 [DEBUG] Available frames in imageData:`, imageData.map((data, idx) => ({ index: idx, hasData: !!data, dataLength: data?.length || 0 })));
@@ -1381,11 +1392,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
       // Choose rendering method based on capabilities and preferences
       let renderSuccess = false;
-      
+
       if (state.renderingMode === 'webgl' && webglContextRef.current) {
         renderSuccess = await renderWithWebGL(canvas, imageData[frameIndex], frameIndex, lodLevel);
       }
-      
+
       if (!renderSuccess) {
         // Fallback to Canvas 2D rendering
         renderSuccess = await renderWithCanvas2D(canvas, imageData[frameIndex], frameIndex, lodLevel);
@@ -1393,13 +1404,13 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
       if (renderSuccess) {
         const renderTime = performance.now() - startTime;
-        
+
         // Record performance metrics for LOD adaptation
         if (lodRenderingRef.current) {
           const memoryUsage = (performance as any).memory?.usedJSHeapSize || 0;
           lodRenderingRef.current.recordPerformance(renderTime, memoryUsage);
         }
-        
+
         // Update performance metrics
         setState(prev => ({
           ...prev,
@@ -1451,7 +1462,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           tempCtx.drawImage(image, 0, 0);
           const imageDataObj = tempCtx.getImageData(0, 0, image.width, image.height);
           const lodImageData = lodRenderingRef.current.applyLOD(imageDataObj, lodLevel);
-          
+
           // Create new image from LOD processed data
           const lodCanvas = document.createElement('canvas');
           lodCanvas.width = lodImageData.width;
@@ -1487,11 +1498,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       if (memoryManagerRef.current) {
         texture = memoryManagerRef.current.getTexture(processedImage.width, processedImage.height, gl.RGBA);
       }
-      
+
       if (!texture) {
         texture = gl.createTexture();
       }
-      
+
       if (!texture) {
         console.error('❌ [UnifiedViewer] Failed to create or get texture');
         return false;
@@ -1504,7 +1515,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           anisotropicFiltering: true,
           compression: true
         });
-        
+
         if (optimizedTexture) {
           texture = optimizedTexture;
         }
@@ -1526,7 +1537,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         // Fallback to basic shader
         program = createShaderProgram(gl);
       }
-      
+
       if (!program) {
         // Return texture to pool if shader creation fails
         if (memoryManagerRef.current) {
@@ -1540,9 +1551,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       // Set up vertex buffer
       const vertices = new Float32Array([
         -1, -1, 0, 1,
-         1, -1, 1, 1,
-        -1,  1, 0, 0,
-         1,  1, 1, 0
+        1, -1, 1, 1,
+        -1, 1, 0, 0,
+        1, 1, 1, 0
       ]);
 
       const buffer = gl.createBuffer();
@@ -1593,7 +1604,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
     console.log(`🎨 [Canvas2D] Starting Canvas2D rendering for frame ${frameIndex}`);
     console.log(`🎨 [Canvas2D] Image data URL length: ${imageData.length}`);
     console.log(`🎨 [Canvas2D] Canvas dimensions: ${canvas.width}x${canvas.height}`);
-    
+
     try {
       const ctx = canvas.getContext('2d');
       if (!ctx) {
@@ -1606,7 +1617,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       // Load image
       const image = new Image();
       console.log(`🎨 [Canvas2D] Creating new Image object`);
-      
+
       await new Promise((resolve, reject) => {
         image.onload = () => {
           console.log(`✅ [Canvas2D] Image loaded successfully: ${image.width}x${image.height}`);
@@ -1624,7 +1635,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       let processedImage = image;
       let targetWidth = image.width;
       let targetHeight = image.height;
-      
+
       if (lodRenderingRef.current && lodLevel < 4) {
         // Create ImageData from the image for LOD processing
         const tempCanvas = document.createElement('canvas');
@@ -1635,10 +1646,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           tempCtx.drawImage(image, 0, 0);
           const imageDataObj = tempCtx.getImageData(0, 0, image.width, image.height);
           const lodImageData = lodRenderingRef.current.applyLOD(imageDataObj, lodLevel);
-          
+
           targetWidth = lodImageData.width;
           targetHeight = lodImageData.height;
-          
+
           // Create new image from LOD processed data
           const lodCanvas = document.createElement('canvas');
           lodCanvas.width = targetWidth;
@@ -1668,11 +1679,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       // Apply transformations
       ctx.save();
       console.log(`🎨 [Canvas2D] Applying transformations - zoom: ${state.zoom}, pan: ${state.pan.x},${state.pan.y}, rotation: ${state.rotation}`);
-      
+
       // Apply zoom and pan
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
-      
+
       ctx.translate(centerX + state.pan.x, centerY + state.pan.y);
       ctx.scale(state.zoom, state.zoom);
       ctx.rotate(state.rotation * Math.PI / 180);
@@ -1692,20 +1703,20 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       if (state.windowWidth !== 3557 || state.windowCenter !== 40) {
         const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageDataObj.data;
-        
+
         const windowMin = state.windowCenter - state.windowWidth / 2;
         const windowMax = state.windowCenter + state.windowWidth / 2;
-        
+
         for (let i = 0; i < data.length; i += 4) {
           const gray = (data[i] + data[i + 1] + data[i + 2]) / 3;
           let windowed = ((gray - windowMin) / (windowMax - windowMin)) * 255;
           windowed = Math.max(0, Math.min(255, windowed));
-          
+
           data[i] = windowed;     // R
           data[i + 1] = windowed; // G
           data[i + 2] = windowed; // B
         }
-        
+
         ctx.putImageData(imageDataObj, 0, 0);
       }
 
@@ -1770,10 +1781,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
     const vertexShader = gl.createShader(gl.VERTEX_SHADER);
     if (!vertexShader) return null;
-    
+
     gl.shaderSource(vertexShader, vertexShaderSource);
     gl.compileShader(vertexShader);
-    
+
     if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
       console.error('Vertex shader compilation error:', gl.getShaderInfoLog(vertexShader));
       return null;
@@ -1781,10 +1792,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
     const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
     if (!fragmentShader) return null;
-    
+
     gl.shaderSource(fragmentShader, fragmentShaderSource);
     gl.compileShader(fragmentShader);
-    
+
     if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
       console.error('Fragment shader compilation error:', gl.getShaderInfoLog(fragmentShader));
       return null;
@@ -1792,11 +1803,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
     const program = gl.createProgram();
     if (!program) return null;
-    
+
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
-    
+
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
       console.error('Shader program linking error:', gl.getProgramInfoLog(program));
       return null;
@@ -1809,7 +1820,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   const handleZoom = useCallback((delta: number) => {
     const newZoom = Math.max(0.1, Math.min(10, state.zoom + delta));
     setState(prev => ({ ...prev, zoom: newZoom }));
-    
+
     // Re-render current frame with new zoom
     displaySlice(state.currentFrame);
   }, [state.zoom, state.currentFrame]);
@@ -1817,7 +1828,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   const handleRotate = useCallback((angle: number) => {
     const newRotation = (state.rotation + angle) % 360;
     setState(prev => ({ ...prev, rotation: newRotation }));
-    
+
     // Re-render current frame with new rotation
     displaySlice(state.currentFrame);
   }, [state.rotation, state.currentFrame]);
@@ -1833,14 +1844,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       windowCenter: 40,
       invert: false
     }));
-    
+
     // Re-render current frame with reset view
     displaySlice(state.currentFrame);
   }, [state.currentFrame]);
 
   const handleWindowing = useCallback(async (windowWidth: number, windowCenter: number) => {
     setState(prev => ({ ...prev, windowWidth, windowCenter }));
-    
+
     // Use Web Worker for windowing adjustment if available
     if (workerInitialized && canvasRef.current) {
       try {
@@ -1848,10 +1859,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          
+
           // Process windowing in Web Worker
           const result = await processWindowing(imageData, windowCenter, windowWidth, state.invert);
-          
+
           if (result && result.processedImageData) {
             const processedImageData = new ImageData(
               result.processedImageData.data,
@@ -1880,7 +1891,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   const navigateFrame = useCallback((direction: 'next' | 'previous' | 'first' | 'last' | number) => {
     let newFrame = state.currentFrame;
     let navigationDirection: 'next' | 'previous' | 'jump' = 'next';
-    
+
     switch (direction) {
       case 'next':
         newFrame = Math.min(state.currentFrame + 1, state.totalFrames - 1);
@@ -1904,7 +1915,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           navigationDirection = Math.abs(direction - state.currentFrame) > 1 ? 'jump' : 'next';
         }
     }
-    
+
     // Record user interaction for predictive caching
     if (predictiveCacheRef.current) {
       predictiveCacheRef.current.recordInteraction({
@@ -1914,35 +1925,35 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         direction: navigationDirection
       });
     }
-    
+
     if (newFrame !== state.currentFrame) {
       // Check predictive cache first
       const cacheKey = `frame_${newFrame}`;
       let cachedData = null;
-      
+
       if (predictiveCacheRef.current) {
         cachedData = predictiveCacheRef.current.get(cacheKey);
       }
-      
+
       if (cachedData) {
         // Use cached data
         console.log(`🎯 [PredictiveCache] Cache hit for frame ${newFrame}`);
         setState(prev => ({ ...prev, currentFrame: newFrame }));
         displaySlice(newFrame);
-        
+
         // Trigger predictive preloading
         if (predictiveCacheRef.current) {
           predictiveCacheRef.current.predictAndPreload(
-            newFrame, 
-            state.totalFrames, 
+            newFrame,
+            state.totalFrames,
             async (frameIndex) => {
               // Load function for predictive cache
               const imageUrl = state.imageData[frameIndex];
               if (imageUrl) {
                 return new Promise((resolve) => {
                   const img = new Image();
-                  img.onload = () => resolve({ 
-                    data: img, 
+                  img.onload = () => resolve({
+                    data: img,
                     size: img.width * img.height * 4 // Estimate size
                   });
                   img.src = imageUrl;
@@ -1954,26 +1965,26 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         }
         return;
       }
-      
+
       // Check if we need to load a new batch
       const newBatch = Math.floor(newFrame / state.batchSize);
       const isLargeDataset = state.totalFrames > 50;
-      
+
       if (!state.loadedBatches.has(newBatch)) {
         // Show loading indicator for large datasets
         if (isLargeDataset) {
           setState(prev => ({ ...prev, isLoading: true }));
         }
-        
+
         console.log(`📦 [UnifiedViewer] Need to load batch ${newBatch} for frame ${newFrame}`);
         loadBatch(newBatch).then(() => {
-          setState(prev => ({ 
-            ...prev, 
+          setState(prev => ({
+            ...prev,
             currentFrame: newFrame,
             isLoading: false
           }));
           displaySlice(newFrame);
-          
+
           // Trigger intelligent preloading for large datasets
           if (isLargeDataset) {
             const preloadDelay = Math.max(100, 500 - (state.totalFrames * 2));
@@ -1985,7 +1996,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       } else {
         setState(prev => ({ ...prev, currentFrame: newFrame }));
         displaySlice(newFrame);
-        
+
         // Still trigger preloading for smooth navigation in large datasets
         if (isLargeDataset) {
           setTimeout(() => preloadAdjacentBatches(newFrame), 200);
@@ -2004,7 +2015,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const cmdKey = isMac ? event.metaKey : event.ctrlKey;
-      
+
       switch (event.key) {
         // Navigation shortcuts (Apple HIG: Arrow keys for navigation)
         case 'ArrowLeft':
@@ -2053,7 +2064,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           event.preventDefault();
           navigateFrame('last');
           break;
-        
+
         // Zoom shortcuts (Apple HIG: Cmd/Ctrl + Plus/Minus)
         case '=':
         case '+':
@@ -2074,7 +2085,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             handleReset();
           }
           break;
-        
+
         // Tool shortcuts (Apple HIG: Single letter shortcuts)
         case ' ':
           // Spacebar: Toggle play/pause for cine mode
@@ -2134,7 +2145,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             setState(prev => ({ ...prev, sidebarOpen: !prev.sidebarOpen }));
           }
           break;
-        
+
         // Window/Level shortcuts (Apple HIG: Modifier + Arrow keys)
         case 'w':
         case 'W':
@@ -2160,7 +2171,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             setState(prev => ({ ...prev, activeTool: prev.activeTool === 'pan' ? null : 'pan' }));
           }
           break;
-        
+
         // Advanced shortcuts for radiologists
         case '1':
           if (!cmdKey) {
@@ -2197,7 +2208,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             setState(prev => ({ ...prev, windowWidth: 400, windowCenter: 50 }));
           }
           break;
-        
+
         // Escape key: Cancel current action
         case 'Escape':
           event.preventDefault();
@@ -2237,7 +2248,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       } else if (state.totalFrames > 1) {
         // Wheel without Ctrl: Frame navigation
         event.preventDefault();
-        
+
         if (event.deltaY > 0) {
           // Scroll down: Next frame
           navigateFrame('next');
@@ -2245,7 +2256,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           // Scroll up: Previous frame
           navigateFrame('previous');
         }
-        
+
         console.log(`🖱️ [MouseWheel] Frame navigation: ${event.deltaY > 0 ? 'next' : 'previous'} (frame ${state.currentFrame + 1}/${state.totalFrames})`);
       }
     };
@@ -2337,7 +2348,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       ...prev,
       annotationLayers: prev.annotationLayers.filter(layer => layer.id !== id),
       annotations: prev.annotations.filter(annotation => annotation.layer !== id),
-      activeAnnotationLayer: prev.activeAnnotationLayer === id 
+      activeAnnotationLayer: prev.activeAnnotationLayer === id
         ? prev.annotationLayers.find(l => l.id !== id)?.id || 'default-layer'
         : prev.activeAnnotationLayer
     }));
@@ -2459,7 +2470,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       ...prev,
       aiEnhancementEnabled: !prev.aiEnhancementEnabled
     }));
-    
+
     // Re-render with or without enhancement
     displaySlice(state.currentFrame);
   }, []);
@@ -2495,38 +2506,100 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   }, []);
 
   // Render side panel content for both mobile drawer and desktop sidebar
-  const renderSidePanelContent = () => (
+
+
+  // Updated renderSidePanelContent (paste inside your parent component)
+const renderSidePanelContent = () => {
+  // ensure totalFrames safe value
+  const totalFramesSafe = Math.max(1, Number(state.totalFrames ?? 1));
+
+  // Always ensure we have a complete navigation3D state - never partial
+  const maxSlices = {
+    axial: totalFramesSafe,
+    sagittal: totalFramesSafe,
+    coronal: totalFramesSafe
+  };
+
+  const navigationState = createCompleteNavigation3DState(state.navigation3D, maxSlices);
+
+  return (
     <Box sx={{ p: 2, height: '100%', overflow: 'auto' }}>
-      {/* 3D Navigation Controls */}
-      <Navigation3DControls
-        state={state.navigation3D}
-        onStateChange={(newState) => setState(prev => ({ ...prev, navigation3D: { ...prev.navigation3D, ...newState } }))}
-        maxSlices={{
-          axial: state.totalFrames,
-          sagittal: state.totalFrames,
-          coronal: state.totalFrames
+      {/* Navigation3D Diagnostics - Minimal */}
+      <Alert severity="info" sx={{ mb: 2, fontSize: '0.8rem' }}>
+        <strong>🎯 3D Navigation Status:</strong> Controls are connected to main DICOM canvas.
+        <br />
+        <strong>Usage:</strong> Move sliders below to rotate and transform the main image.
+      </Alert>
+      
+      {/* 3D Navigation Controls - Main Canvas Version (Direct Control) */}
+      <Navigation3DMainCanvas
+        canvasRef={canvasRef}
+        onStateChange={(mainCanvasState) => {
+          console.log('🎯 Main Canvas Navigation3D state change:', mainCanvasState);
+          
+          // Convert main canvas state to full Navigation3D state
+          const newNavigationState = createCompleteNavigation3DState({
+            ...navigationState,
+            pitch: mainCanvasState.pitch,
+            yaw: mainCanvasState.yaw,
+            roll: mainCanvasState.roll,
+            opacity: mainCanvasState.opacity,
+            renderingMode: mainCanvasState.renderingMode as any,
+            currentPreset: mainCanvasState.currentPreset
+          }, maxSlices);
+          
+          setState(prev => ({
+            ...prev,
+            navigation3D: newNavigationState
+          }));
+          
+          console.log('🎯 Updated full navigation state for main canvas:', newNavigationState);
         }}
-        onReset={() => setState(prev => ({ 
-          ...prev, 
-          navigation3D: { 
-            pitch: 0,
-            yaw: 0,
-            roll: 0,
-            opacity: 1,
-            volumeOpacity: 0.8,
-            surfaceOpacity: 1,
-            axialSlice: Math.floor(state.totalFrames / 2),
-            sagittalSlice: Math.floor(state.totalFrames / 2),
-            coronalSlice: Math.floor(state.totalFrames / 2),
-            clipNear: 0.1,
-            clipFar: 1000,
-            renderingMode: '3d' as const,
-            isAnimating: false,
-            animationSpeed: 1,
-            currentPreset: 'anterior'
-          } 
-        }))}
       />
+
+      {/* Original Complex Controls (for reference) */}
+      {false && (
+        <Navigation3DControls
+          state={navigationState}
+          onStateChange={(updates) => {
+            const newNavigationState = createCompleteNavigation3DState({
+              ...navigationState,
+              ...updates
+            }, maxSlices);
+            
+            setState(prev => ({
+              ...prev,
+              navigation3D: newNavigationState
+            }));
+            
+            console.log('🎯 Updating 3D rendering with new navigation state');
+          }}
+          maxSlices={{
+            axial: totalFramesSafe,
+            sagittal: totalFramesSafe,
+            coronal: totalFramesSafe
+          }}
+          onPresetApply={(presetId) => {
+            console.log(`🎯 Applied preset: ${presetId}`);
+          }}
+          onReset={() => {
+            const defaultState = getDefaultNavigation3DState(maxSlices);
+            setState(prev => ({
+              ...prev,
+              navigation3D: defaultState
+            }));
+            console.log('🔄 Reset to default navigation state');
+          }}
+          onRenderingUpdate={(navState) => {
+            if (canvasRef.current) {
+              navigation3DRenderer.updateRendering(navState, state.imageData);
+            }
+          }}
+          enableVolumeRendering={true}
+          enableMPR={true}
+          enableAnimation={true}
+        />
+      )}
 
       {/* AI Enhancement Panel */}
       {enableAI && (
@@ -2535,20 +2608,20 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           onEnhancementApplied={(enhancedData) => setState(prev => ({ ...prev, enhancedImageData: enhancedData }))}
           onDetectionResults={(results) => setState(prev => ({ ...prev, aiDetectionResults: results }))}
           onError={(error) => setState(prev => ({ ...prev, error }))}
-          aiModule={aiModuleRef.current!}
-          enabled={state.aiEnhancementEnabled}
+          aiModule={aiModuleRef.current ?? null}
+          enabled={Boolean(state.aiEnhancementEnabled)}
         />
       )}
 
       {/* Advanced Annotation Panel */}
       <AdvancedAnnotationPanel
         imageId={study.id}
-        annotations={state.annotations}
-        layers={state.annotationLayers}
-        groups={state.annotationGroups}
-        templates={state.annotationTemplates}
-        activeLayer={state.activeAnnotationLayer}
-        activeGroup={state.activeAnnotationGroup}
+        annotations={state.annotations ?? []}
+        layers={state.annotationLayers ?? []}
+        groups={state.annotationGroups ?? []}
+        templates={state.annotationTemplates ?? []}
+        activeLayer={state.activeAnnotationLayer ?? null}
+        activeGroup={state.activeAnnotationGroup ?? null}
         onAnnotationCreate={(annotation) => {
           const newAnnotation = {
             ...annotation,
@@ -2557,110 +2630,87 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             lastModified: new Date().toISOString(),
             lastModifiedBy: 'current-user'
           } as Annotation;
-          setState(prev => ({ ...prev, annotations: [...prev.annotations, newAnnotation] }));
+          setState(prev => ({ ...prev, annotations: [...(prev.annotations ?? []), newAnnotation] }));
         }}
         onAnnotationUpdate={(id, updates) => {
           setState(prev => ({
             ...prev,
-            annotations: prev.annotations.map(ann => 
+            annotations: (prev.annotations ?? []).map(ann =>
               ann.id === id ? { ...ann, ...updates, lastModified: new Date().toISOString(), lastModifiedBy: 'current-user' } as Annotation : ann
             )
           }));
         }}
         onAnnotationDelete={(id) => {
-          setState(prev => ({
-            ...prev,
-            annotations: prev.annotations.filter(ann => ann.id !== id)
-          }));
+          setState(prev => ({ ...prev, annotations: (prev.annotations ?? []).filter(ann => ann.id !== id) }));
         }}
         onLayerCreate={(layer) => {
-          const newLayer: AnnotationLayer = {
-            ...layer,
-            annotations: []
-          };
-          setState(prev => ({ ...prev, annotationLayers: [...prev.annotationLayers, newLayer] }));
+          const newLayer: AnnotationLayer = { ...layer, annotations: [] };
+          setState(prev => ({ ...prev, annotationLayers: [...(prev.annotationLayers ?? []), newLayer] }));
         }}
         onLayerUpdate={(id, updates) => {
-          setState(prev => ({
-            ...prev,
-            annotationLayers: prev.annotationLayers.map(layer => 
-              layer.id === id ? { ...layer, ...updates } : layer
-            )
-          }));
+          setState(prev => ({ ...prev, annotationLayers: (prev.annotationLayers ?? []).map(l => l.id === id ? { ...l, ...updates } : l) }));
         }}
         onLayerDelete={(id) => {
-          setState(prev => ({
-            ...prev,
-            annotationLayers: prev.annotationLayers.filter(layer => layer.id !== id)
-          }));
+          setState(prev => ({ ...prev, annotationLayers: (prev.annotationLayers ?? []).filter(l => l.id !== id) }));
         }}
         onGroupCreate={(group) => {
-          const newGroup: AnnotationGroup = {
-            ...group,
-            annotations: []
-          };
-          setState(prev => ({ ...prev, annotationGroups: [...prev.annotationGroups, newGroup] }));
+          const newGroup: AnnotationGroup = { ...group, annotations: [] };
+          setState(prev => ({ ...prev, annotationGroups: [...(prev.annotationGroups ?? []), newGroup] }));
         }}
         onGroupUpdate={(id, updates) => {
-          setState(prev => ({
-            ...prev,
-            annotationGroups: prev.annotationGroups.map(group => 
-              group.id === id ? { ...group, ...updates } : group
-            )
-          }));
+          setState(prev => ({ ...prev, annotationGroups: (prev.annotationGroups ?? []).map(g => g.id === id ? { ...g, ...updates } : g) }));
         }}
         onGroupDelete={(id) => {
-          setState(prev => ({
-            ...prev,
-            annotationGroups: prev.annotationGroups.filter(group => group.id !== id)
-          }));
+          setState(prev => ({ ...prev, annotationGroups: (prev.annotationGroups ?? []).filter(g => g.id !== id) }));
         }}
         onActiveLayerChange={(layerId) => setState(prev => ({ ...prev, activeAnnotationLayer: layerId }))}
         onActiveGroupChange={(groupId) => setState(prev => ({ ...prev, activeAnnotationGroup: groupId }))}
         onExport={(format) => {
-          // Export functionality would be implemented here
           console.log(`Exporting annotations in ${format} format`);
+          // implement export logic (e.g., convert annotations -> JSON/CSV and trigger download)
         }}
         onImport={(data) => {
-          // Import functionality would be implemented here
           console.log('Importing annotation data:', data);
+          // implement import logic (validate and merge)
         }}
         currentUser={{ id: 'current-user', name: 'Current User' }}
       />
     </Box>
   );
+};
+
 
   const renderViewerContent = () => {
     if (state.isLoading) {
       return (
-        <Box sx={{ 
-          display: 'flex', 
+        <Box sx={{
+          display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center', 
-          justifyContent: 'center', 
+          alignItems: 'center',
+          justifyContent: 'center',
           height: '100%',
           gap: 3,
-          background: theme.palette.mode === 'dark' 
+          background: theme.palette.mode === 'dark'
             ? 'linear-gradient(135deg, rgba(28, 28, 30, 0.95) 0%, rgba(44, 44, 46, 0.98) 100%)'
             : 'linear-gradient(135deg, rgba(248, 248, 248, 0.95) 0%, rgba(242, 242, 247, 0.98) 100%)',
           borderRadius: 3,
           p: 4,
           backdropFilter: 'blur(20px) saturate(180%)',
-          border: theme.palette.mode === 'dark' 
+          border: theme.palette.mode === 'dark'
             ? '1px solid rgba(84, 84, 88, 0.3)'
             : '1px solid rgba(198, 198, 200, 0.3)'
         }}>
           <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-            <CircularProgress 
-              size={isMobile ? 60 : 80} 
+            <CircularProgress
+              size={isMobile ? 60 : 80}
               thickness={3}
-              sx={{ 
+              sx={{
                 color: theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 1)' : 'rgba(0, 122, 255, 1)',
                 animationDuration: '1200ms',
-                filter: theme.palette.mode === 'dark' 
+                filter: theme.palette.mode === 'dark'
                   ? 'drop-shadow(0 4px 12px rgba(10, 132, 255, 0.3))'
                   : 'drop-shadow(0 4px 12px rgba(0, 122, 255, 0.25))'
-              }} 
+              }}
             />
             <Box
               sx={{
@@ -2674,9 +2724,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 justifyContent: 'center',
               }}
             >
-              <Typography 
-                variant="caption" 
-                component="div" 
+              <Typography
+                variant="caption"
+                component="div"
                 sx={{
                   color: theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 1)' : 'rgba(0, 122, 255, 1)',
                   fontWeight: 600,
@@ -2688,10 +2738,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               </Typography>
             </Box>
           </Box>
-          
+
           <Stack spacing={2.5} alignItems="center" sx={{ maxWidth: 400, textAlign: 'center' }}>
-            <Typography 
-              variant={isMobile ? "h6" : "h5"} 
+            <Typography
+              variant={isMobile ? "h6" : "h5"}
               sx={{
                 color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.95)' : 'rgba(60, 60, 67, 0.95)',
                 fontWeight: 600,
@@ -2700,43 +2750,43 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             >
               Loading DICOM Study
             </Typography>
-            
-            <Typography 
-              variant="body2" 
-              sx={{ 
+
+            <Typography
+              variant="body2"
+              sx={{
                 color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(60, 60, 67, 0.7)',
                 opacity: 0.9,
                 lineHeight: 1.5,
                 fontSize: isMobile ? '0.85rem' : '0.9rem'
               }}
             >
-              {state.isLoadingBatch ? 
-                `Loading batch ${Math.ceil((state.currentFrame + 1) / state.batchSize)} of ${Math.ceil(state.totalFrames / state.batchSize)}...` : 
+              {state.isLoadingBatch ?
+                `Loading batch ${Math.ceil((state.currentFrame + 1) / state.batchSize)} of ${Math.ceil(state.totalFrames / state.batchSize)}...` :
                 'Initializing advanced viewer components...'}
             </Typography>
-            
+
             {/* Apple-style Progress indicator for batch loading */}
             {state.isLoadingBatch && (
               <Box sx={{ width: '100%', mt: 2 }}>
-                <LinearProgress 
-                  variant="determinate" 
+                <LinearProgress
+                  variant="determinate"
                   value={(state.loadedBatches.size / Math.ceil(state.totalFrames / state.batchSize)) * 100}
-                  sx={{ 
-                    height: 6, 
+                  sx={{
+                    height: 6,
                     borderRadius: 3,
                     backgroundColor: theme.palette.mode === 'dark' ? 'rgba(84, 84, 88, 0.3)' : 'rgba(198, 198, 200, 0.3)',
                     '& .MuiLinearProgress-bar': {
                       borderRadius: 3,
-                      background: theme.palette.mode === 'dark' 
+                      background: theme.palette.mode === 'dark'
                         ? 'linear-gradient(90deg, rgba(10, 132, 255, 0.9) 0%, rgba(30, 144, 255, 0.8) 100%)'
                         : 'linear-gradient(90deg, rgba(0, 122, 255, 0.9) 0%, rgba(30, 144, 255, 0.8) 100%)'
                     }
                   }}
                 />
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    mt: 1.5, 
+                <Typography
+                  variant="caption"
+                  sx={{
+                    mt: 1.5,
                     display: 'block',
                     color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(60, 60, 67, 0.6)',
                     fontSize: '0.75rem',
@@ -2747,39 +2797,39 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 </Typography>
               </Box>
             )}
-            
+
             {/* Apple-style Study information preview */}
-            <Card sx={{ 
-              mt: 2, 
-              p: 2.5, 
-              backgroundColor: theme.palette.mode === 'dark' 
+            <Card sx={{
+              mt: 2,
+              p: 2.5,
+              backgroundColor: theme.palette.mode === 'dark'
                 ? 'rgba(58, 58, 60, 0.8)'
                 : 'rgba(255, 255, 255, 0.9)',
               backdropFilter: 'blur(20px) saturate(180%)',
-              border: theme.palette.mode === 'dark' 
+              border: theme.palette.mode === 'dark'
                 ? '1px solid rgba(84, 84, 88, 0.4)'
                 : '1px solid rgba(198, 198, 200, 0.4)',
               borderRadius: 3,
-              boxShadow: theme.palette.mode === 'dark' 
+              boxShadow: theme.palette.mode === 'dark'
                 ? '0 8px 32px rgba(0, 0, 0, 0.3)'
                 : '0 8px 32px rgba(0, 0, 0, 0.1)'
             }}>
               <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" justifyContent="center">
-                <Chip 
-                  label={state.modality} 
+                <Chip
+                  label={state.modality}
                   size="small"
-                  sx={{ 
+                  sx={{
                     fontWeight: 600,
-                    background: theme.palette.mode === 'dark' 
+                    background: theme.palette.mode === 'dark'
                       ? 'linear-gradient(135deg, rgba(10, 132, 255, 0.9) 0%, rgba(30, 144, 255, 0.8) 100%)'
                       : 'linear-gradient(135deg, rgba(0, 122, 255, 0.9) 0%, rgba(30, 144, 255, 0.8) 100%)',
                     color: 'white',
                     borderRadius: 2
                   }}
                 />
-                <Chip 
-                  label={`${state.totalFrames} slices`} 
-                  variant="outlined" 
+                <Chip
+                  label={`${state.totalFrames} slices`}
+                  variant="outlined"
                   size="small"
                   sx={{
                     borderColor: theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 0.6)' : 'rgba(142, 142, 147, 0.5)',
@@ -2788,9 +2838,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                     fontWeight: 500
                   }}
                 />
-                <Chip 
-                  label={state.studyType} 
-                  variant="outlined" 
+                <Chip
+                  label={state.studyType}
+                  variant="outlined"
                   size="small"
                   sx={{
                     borderColor: theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 0.6)' : 'rgba(142, 142, 147, 0.5)',
@@ -2807,18 +2857,18 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
     }
 
     return (
-      <Box sx={{ 
-        position: 'relative', 
-        height: '100%', 
+      <Box sx={{
+        position: 'relative',
+        height: '100%',
         overflow: 'hidden',
-        background: theme.palette.mode === 'dark' 
+        background: theme.palette.mode === 'dark'
           ? 'linear-gradient(135deg, rgba(28, 28, 30, 0.98) 0%, rgba(44, 44, 46, 0.95) 100%)'
           : 'linear-gradient(135deg, rgba(248, 248, 248, 0.98) 0%, rgba(242, 242, 247, 0.95) 100%)',
         borderRadius: 3,
-        border: theme.palette.mode === 'dark' 
+        border: theme.palette.mode === 'dark'
           ? '1px solid rgba(84, 84, 88, 0.2)'
           : '1px solid rgba(198, 198, 200, 0.2)',
-        boxShadow: theme.palette.mode === 'dark' 
+        boxShadow: theme.palette.mode === 'dark'
           ? '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
           : '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8)'
       }}>
@@ -2830,7 +2880,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               borderRadius: 3,
               overflow: 'hidden',
               '& .mpr-viewer-container': {
-                background: theme.palette.mode === 'dark' 
+                background: theme.palette.mode === 'dark'
                   ? 'rgba(28, 28, 30, 0.95)'
                   : 'rgba(248, 248, 248, 0.95)',
                 borderRadius: 3
@@ -2873,15 +2923,15 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 height: '100%',
                 objectFit: 'contain',
                 borderRadius: '12px',
-                background: theme.palette.mode === 'dark' 
+                background: theme.palette.mode === 'dark'
                   ? 'linear-gradient(135deg, rgba(0, 0, 0, 0.9) 0%, rgba(28, 28, 30, 0.8) 100%)'
                   : 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 248, 248, 0.8) 100%)',
-                cursor: state.activeTool === 'pan' ? 'grab' : 
-                       state.activeTool === 'zoom' ? 'zoom-in' : 
-                       state.activeTool === 'windowing' ? 'crosshair' : 
-                       state.activeTool ? 'crosshair' : 'default',
+                cursor: state.activeTool === 'pan' ? 'grab' :
+                  state.activeTool === 'zoom' ? 'zoom-in' :
+                    state.activeTool === 'windowing' ? 'crosshair' :
+                      state.activeTool ? 'crosshair' : 'default',
                 transition: 'all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)',
-                filter: theme.palette.mode === 'dark' 
+                filter: theme.palette.mode === 'dark'
                   ? 'contrast(1.05) brightness(1.02)'
                   : 'contrast(1.02) brightness(0.98)'
               }}
@@ -2902,20 +2952,20 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   fontSize: isMobile ? '0.75rem' : '0.8rem',
                   fontWeight: 500,
                   color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(60, 60, 67, 0.9)',
-                  textShadow: theme.palette.mode === 'dark' 
+                  textShadow: theme.palette.mode === 'dark'
                     ? '0 1px 3px rgba(0, 0, 0, 0.8)'
                     : '0 1px 3px rgba(255, 255, 255, 0.8)',
                   letterSpacing: '0.01em',
                   lineHeight: 1.4
                 },
                 '& .dicom-overlay-corner': {
-                  background: theme.palette.mode === 'dark' 
+                  background: theme.palette.mode === 'dark'
                     ? 'linear-gradient(135deg, rgba(28, 28, 30, 0.8) 0%, rgba(44, 44, 46, 0.6) 100%)'
                     : 'linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(248, 248, 248, 0.6) 100%)',
                   backdropFilter: 'blur(20px) saturate(180%)',
                   borderRadius: 2,
                   padding: '8px 12px',
-                  border: theme.palette.mode === 'dark' 
+                  border: theme.palette.mode === 'dark'
                     ? '1px solid rgba(84, 84, 88, 0.3)'
                     : '1px solid rgba(198, 198, 200, 0.3)'
                 }
@@ -2950,13 +3000,13 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 fontSize: '0.75rem',
                 fontWeight: 600,
                 color: theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 1)' : 'rgba(0, 122, 255, 1)',
-                textShadow: theme.palette.mode === 'dark' 
+                textShadow: theme.palette.mode === 'dark'
                   ? '0 1px 3px rgba(0, 0, 0, 0.8)'
                   : '0 1px 3px rgba(255, 255, 255, 0.8)',
                 letterSpacing: '0.02em'
               },
               '& .cad-finding': {
-                filter: theme.palette.mode === 'dark' 
+                filter: theme.palette.mode === 'dark'
                   ? 'drop-shadow(0 2px 8px rgba(255, 69, 58, 0.4))'
                   : 'drop-shadow(0 2px 8px rgba(255, 59, 48, 0.3))'
               }
@@ -3034,7 +3084,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   tags: []
                 }
               } as Annotation;
-              
+
               setState(prev => ({
                 ...prev,
                 annotations: [...prev.annotations, systemAnnotation]
@@ -3074,7 +3124,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   tags: []
                 }
               } as Annotation;
-              
+
               setState(prev => ({
                 ...prev,
                 annotations: [...prev.annotations, systemAnnotation]
@@ -3085,10 +3135,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
         {/* Enhanced Performance Metrics */}
         {enableAdvancedTools && (
-          <Box sx={{ 
-            position: 'absolute', 
-            top: 16, 
-            right: 16, 
+          <Box sx={{
+            position: 'absolute',
+            top: 16,
+            right: 16,
             zIndex: 1000,
             display: 'flex',
             flexDirection: 'column',
@@ -3101,49 +3151,49 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               label={`${Math.round(state.processingTime)}ms`}
               size="small"
               color={state.processingTime < 50 ? 'success' : (state.processingTime < 100 ? 'warning' : 'error')}
-              sx={{ 
+              sx={{
                 backgroundColor: 'rgba(0,0,0,0.8)',
                 color: 'white',
                 backdropFilter: 'blur(10px)',
                 '& .MuiChip-icon': { color: 'inherit' }
               }}
             />
-            
+
             {/* Cache Status Badge */}
             <Chip
               icon={<Cached />}
               label={state.cacheHit ? 'Cached' : 'Loading'}
               size="small"
               color={state.cacheHit ? 'success' : 'default'}
-              sx={{ 
+              sx={{
                 backgroundColor: 'rgba(0,0,0,0.8)',
                 color: 'white',
                 backdropFilter: 'blur(10px)',
                 '& .MuiChip-icon': { color: 'inherit' }
               }}
             />
-            
+
             {/* Quality Level Badge */}
             <Chip
               icon={<HighQuality />}
               label={`Q:${state.currentQuality}%`}
               size="small"
               color={state.currentQuality >= 90 ? 'success' : (state.currentQuality >= 70 ? 'warning' : 'error')}
-              sx={{ 
+              sx={{
                 backgroundColor: 'rgba(0,0,0,0.8)',
                 color: 'white',
                 backdropFilter: 'blur(10px)',
                 '& .MuiChip-icon': { color: 'inherit' }
               }}
             />
-            
+
             {/* Batch Loading Badge */}
             <Badge badgeContent={state.loadedBatches.size} color="primary">
               <Chip
                 label="Batches"
                 size="small"
                 variant="outlined"
-                sx={{ 
+                sx={{
                   backgroundColor: 'rgba(0,0,0,0.8)',
                   color: 'white',
                   borderColor: 'rgba(255,255,255,0.3)',
@@ -3155,10 +3205,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         )}
 
         {/* Enhanced Navigation Controls */}
-        <Box sx={{ 
-          position: 'absolute', 
-          bottom: 20, 
-          left: '50%', 
+        <Box sx={{
+          position: 'absolute',
+          bottom: 20,
+          left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex',
           alignItems: 'center',
@@ -3176,7 +3226,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 size="small"
                 onClick={() => navigateFrame('first')}
                 disabled={state.currentFrame === 0}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3186,14 +3236,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               </IconButton>
             </span>
           </Tooltip>
-          
+
           <Tooltip title="Previous slice" arrow>
             <span>
               <IconButton
                 size="small"
                 onClick={() => navigateFrame('previous')}
                 disabled={state.currentFrame === 0}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3203,19 +3253,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               </IconButton>
             </span>
           </Tooltip>
-          
+
           {/* Enhanced frame counter with progress bar */}
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
+          <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             minWidth: 120,
             mx: 2
           }}>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                color: 'white', 
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'white',
                 fontWeight: 'bold',
                 mb: 0.5
               }}
@@ -3237,14 +3287,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               }}
             />
           </Box>
-          
+
           <Tooltip title="Next slice" arrow>
             <span>
               <IconButton
                 size="small"
                 onClick={() => navigateFrame('next')}
                 disabled={state.currentFrame === state.totalFrames - 1}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3254,14 +3304,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               </IconButton>
             </span>
           </Tooltip>
-          
+
           <Tooltip title="Last slice" arrow>
             <span>
               <IconButton
                 size="small"
                 onClick={() => navigateFrame('last')}
                 disabled={state.currentFrame === state.totalFrames - 1}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3274,9 +3324,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         </Box>
 
         {/* Enhanced Zoom and Tool Controls */}
-        <Box sx={{ 
-          position: 'absolute', 
-          top: 20, 
+        <Box sx={{
+          position: 'absolute',
+          top: 20,
           left: 20,
           display: 'flex',
           flexDirection: 'column',
@@ -3292,9 +3342,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             <IconButton
               size="small"
               onClick={() => handleZoom(0.1)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3304,14 +3354,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <ZoomIn />
             </IconButton>
           </Tooltip>
-          
+
           <Tooltip title="Zoom out" arrow placement="right">
             <IconButton
               size="small"
               onClick={() => handleZoom(-0.1)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3321,16 +3371,16 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <ZoomOut />
             </IconButton>
           </Tooltip>
-          
+
           <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-          
+
           <Tooltip title="Rotate right" arrow placement="right">
             <IconButton
               size="small"
               onClick={() => handleRotate(90)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3340,14 +3390,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <RotateRight />
             </IconButton>
           </Tooltip>
-          
+
           <Tooltip title="Rotate left" arrow placement="right">
             <IconButton
               size="small"
               onClick={() => handleRotate(-90)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3357,16 +3407,16 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <RotateLeft />
             </IconButton>
           </Tooltip>
-          
+
           <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-          
+
           <Tooltip title="Reset view" arrow placement="right">
             <IconButton
               size="small"
               onClick={handleReset}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3376,24 +3426,24 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <RestartAlt />
             </IconButton>
           </Tooltip>
-          
+
           {/* Text Annotation and Drawing Tools */}
           {enableAdvancedTools && (
             <>
               <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-              
+
               <Tooltip title="Text annotation" arrow placement="right">
                 <IconButton
                   size="small"
-                  onClick={() => setState(prev => ({ 
-                    ...prev, 
+                  onClick={() => setState(prev => ({
+                    ...prev,
                     textAnnotationMode: prev.textAnnotationMode === 'text' ? null : 'text',
                     textAnnotationsEnabled: prev.textAnnotationMode !== 'text'
                   }))}
-                  sx={{ 
+                  sx={{
                     color: state.textAnnotationMode === 'text' ? '#667eea' : 'white',
                     backgroundColor: state.textAnnotationMode === 'text' ? 'rgba(102, 126, 234, 0.2)' : 'transparent',
-                    '&:hover': { 
+                    '&:hover': {
                       backgroundColor: state.textAnnotationMode === 'text' ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.1)',
                       transform: 'scale(1.1)'
                     },
@@ -3403,19 +3453,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   <TextFields />
                 </IconButton>
               </Tooltip>
-              
+
               <Tooltip title="Drawing tool" arrow placement="right">
                 <IconButton
                   size="small"
-                  onClick={() => setState(prev => ({ 
-                    ...prev, 
+                  onClick={() => setState(prev => ({
+                    ...prev,
                     textAnnotationMode: prev.textAnnotationMode === 'drawing' ? null : 'drawing',
                     textAnnotationsEnabled: prev.textAnnotationMode !== 'drawing'
                   }))}
-                  sx={{ 
+                  sx={{
                     color: state.textAnnotationMode === 'drawing' ? '#667eea' : 'white',
                     backgroundColor: state.textAnnotationMode === 'drawing' ? 'rgba(102, 126, 234, 0.2)' : 'transparent',
-                    '&:hover': { 
+                    '&:hover': {
                       backgroundColor: state.textAnnotationMode === 'drawing' ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.1)',
                       transform: 'scale(1.1)'
                     },
@@ -3430,9 +3480,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         </Box>
 
         {/* Frame Navigation Controls */}
-        <Box sx={{ 
-          position: 'absolute', 
-          bottom: 20, 
+        <Box sx={{
+          position: 'absolute',
+          bottom: 20,
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex',
@@ -3452,7 +3502,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 size="small"
                 onClick={() => navigateFrame('first')}
                 disabled={state.currentFrame === 0}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3462,14 +3512,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               </IconButton>
             </span>
           </Tooltip>
-          
+
           <Tooltip title="Previous slice" arrow>
             <span>
               <IconButton
                 size="small"
                 onClick={() => navigateFrame('previous')}
                 disabled={state.currentFrame === 0}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3479,19 +3529,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               </IconButton>
             </span>
           </Tooltip>
-          
+
           {/* Enhanced frame counter with progress bar */}
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
+          <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             minWidth: 120,
             mx: 2
           }}>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                color: 'white', 
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'white',
                 fontWeight: 'bold',
                 mb: 0.5
               }}
@@ -3513,14 +3563,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               }}
             />
           </Box>
-          
+
           <Tooltip title="Next slice" arrow>
             <span>
               <IconButton
                 size="small"
                 onClick={() => navigateFrame('next')}
                 disabled={state.currentFrame === state.totalFrames - 1}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3530,14 +3580,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               </IconButton>
             </span>
           </Tooltip>
-          
+
           <Tooltip title="Last slice" arrow>
             <span>
               <IconButton
                 size="small"
                 onClick={() => navigateFrame('last')}
                 disabled={state.currentFrame === state.totalFrames - 1}
-                sx={{ 
+                sx={{
                   color: 'white',
                   '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
                   '&:disabled': { color: 'rgba(255,255,255,0.3)' }
@@ -3550,9 +3600,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         </Box>
 
         {/* Enhanced Zoom and Tool Controls */}
-        <Box sx={{ 
-          position: 'absolute', 
-          top: 20, 
+        <Box sx={{
+          position: 'absolute',
+          top: 20,
           left: 20,
           display: 'flex',
           flexDirection: 'column',
@@ -3568,9 +3618,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             <IconButton
               size="small"
               onClick={() => handleZoom(0.1)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3580,14 +3630,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <ZoomIn />
             </IconButton>
           </Tooltip>
-          
+
           <Tooltip title="Zoom out" arrow placement="right">
             <IconButton
               size="small"
               onClick={() => handleZoom(-0.1)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3597,16 +3647,16 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <ZoomOut />
             </IconButton>
           </Tooltip>
-          
+
           <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-          
+
           <Tooltip title="Rotate right" arrow placement="right">
             <IconButton
               size="small"
               onClick={() => handleRotate(90)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3616,14 +3666,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <RotateRight />
             </IconButton>
           </Tooltip>
-          
+
           <Tooltip title="Rotate left" arrow placement="right">
             <IconButton
               size="small"
               onClick={() => handleRotate(-90)}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3633,16 +3683,16 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <RotateLeft />
             </IconButton>
           </Tooltip>
-          
+
           <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-          
+
           <Tooltip title="Reset view" arrow placement="right">
             <IconButton
               size="small"
               onClick={handleReset}
-              sx={{ 
+              sx={{
                 color: 'white',
-                '&:hover': { 
+                '&:hover': {
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   transform: 'scale(1.1)'
                 },
@@ -3652,24 +3702,24 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <RestartAlt />
             </IconButton>
           </Tooltip>
-          
+
           {/* Text Annotation and Drawing Tools */}
           {enableAdvancedTools && (
             <>
               <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-              
+
               <Tooltip title="Text annotation" arrow placement="right">
                 <IconButton
                   size="small"
-                  onClick={() => setState(prev => ({ 
-                    ...prev, 
+                  onClick={() => setState(prev => ({
+                    ...prev,
                     textAnnotationMode: prev.textAnnotationMode === 'text' ? null : 'text',
                     textAnnotationsEnabled: prev.textAnnotationMode !== 'text'
                   }))}
-                  sx={{ 
+                  sx={{
                     color: state.textAnnotationMode === 'text' ? '#667eea' : 'white',
                     backgroundColor: state.textAnnotationMode === 'text' ? 'rgba(102, 126, 234, 0.2)' : 'transparent',
-                    '&:hover': { 
+                    '&:hover': {
                       backgroundColor: state.textAnnotationMode === 'text' ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.1)',
                       transform: 'scale(1.1)'
                     },
@@ -3679,19 +3729,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   <TextFields />
                 </IconButton>
               </Tooltip>
-              
+
               <Tooltip title="Drawing tool" arrow placement="right">
                 <IconButton
                   size="small"
-                  onClick={() => setState(prev => ({ 
-                    ...prev, 
+                  onClick={() => setState(prev => ({
+                    ...prev,
                     textAnnotationMode: prev.textAnnotationMode === 'drawing' ? null : 'drawing',
                     textAnnotationsEnabled: prev.textAnnotationMode !== 'drawing'
                   }))}
-                  sx={{ 
+                  sx={{
                     color: state.textAnnotationMode === 'drawing' ? '#667eea' : 'white',
                     backgroundColor: state.textAnnotationMode === 'drawing' ? 'rgba(102, 126, 234, 0.2)' : 'transparent',
-                    '&:hover': { 
+                    '&:hover': {
                       backgroundColor: state.textAnnotationMode === 'drawing' ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.1)',
                       transform: 'scale(1.1)'
                     },
@@ -3717,19 +3767,18 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             }
           }}
         >
-          <Alert 
-            severity={performanceNotification.severity} 
+          <Alert
+            severity={performanceNotification.severity}
             onClose={() => setPerformanceNotification(prev => ({ ...prev, open: false }))}
             sx={{
               borderRadius: 2,
               boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
               backdropFilter: 'blur(10px)',
-              border: `1px solid ${
-                performanceNotification.severity === 'success' ? theme.palette.success.light :
+              border: `1px solid ${performanceNotification.severity === 'success' ? theme.palette.success.light :
                 performanceNotification.severity === 'error' ? theme.palette.error.light :
-                performanceNotification.severity === 'warning' ? theme.palette.warning.light :
-                theme.palette.info.light
-              }`,
+                  performanceNotification.severity === 'warning' ? theme.palette.warning.light :
+                    theme.palette.info.light
+                }`,
               '& .MuiAlert-icon': {
                 fontSize: 24
               },
@@ -3739,9 +3788,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             }}
             icon={
               performanceNotification.severity === 'success' ? <Cached /> :
-              performanceNotification.severity === 'error' ? <ErrorIcon /> :
-              performanceNotification.severity === 'warning' ? <Warning /> :
-              <Info />
+                performanceNotification.severity === 'error' ? <ErrorIcon /> :
+                  performanceNotification.severity === 'warning' ? <Warning /> :
+                    <Info />
             }
           >
             {performanceNotification.message}
@@ -3755,11 +3804,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   // Error state
   if (state.error) {
     return (
-      <Paper 
-        sx={{ 
-          height: '100%', 
-          display: 'flex', 
-          alignItems: 'center', 
+      <Paper
+        sx={{
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
           background: `linear-gradient(135deg, ${theme.palette.grey[50]} 0%, ${theme.palette.grey[100]} 100%)`,
           position: 'relative',
@@ -3779,7 +3828,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             backgroundSize: '50px 50px'
           }}
         />
-        
+
         <Box sx={{ textAlign: 'center', zIndex: 1, maxWidth: 600, px: 3 }}>
           {/* Error Icon with Animation */}
           <Box
@@ -3804,9 +3853,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           </Box>
 
           {/* Enhanced Error Alert */}
-          <Alert 
-            severity="error" 
-            sx={{ 
+          <Alert
+            severity="error"
+            sx={{
               mb: 3,
               borderRadius: 2,
               boxShadow: '0 8px 32px rgba(244, 67, 54, 0.15)',
@@ -3822,7 +3871,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.6 }}>
               {state.error}
             </Typography>
-            
+
             {/* Error Details */}
             <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(244, 67, 54, 0.05)', borderRadius: 1 }}>
               <Typography variant="body2" color="text.secondary">
@@ -3862,16 +3911,16 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <RestartAlt sx={{ mr: 1 }} />
               Retry Loading
             </Button>
-            
+
             <Button
               variant="outlined"
               color="secondary"
               size="large"
               onClick={() => {
                 // Try alternative loading method
-                setState(prev => ({ 
-                  ...prev, 
-                  error: null, 
+                setState(prev => ({
+                  ...prev,
+                  error: null,
                   isLoading: true,
                   renderingMode: prev.renderingMode === 'webgl' ? 'software' : 'webgl'
                 }));
@@ -3888,7 +3937,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
               <Settings sx={{ mr: 1 }} />
               Try Alternative Mode
             </Button>
-            
+
             <Button
               variant="text"
               color="info"
@@ -3926,10 +3975,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   }
 
   return (
-    <Paper 
-      sx={{ 
-        height: '100%', 
-        display: 'flex', 
+    <Paper
+      sx={{
+        height: '100%',
+        display: 'flex',
         flexDirection: isMobile ? 'column' : 'row',
         overflow: 'hidden',
         borderRadius: isMobile ? 1 : 2,
@@ -3937,10 +3986,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       }}
     >
       {/* Main Viewer */}
-      <Box 
-        sx={{ 
-          flex: 1, 
-          display: 'flex', 
+      <Box
+        sx={{
+          flex: 1,
+          display: 'flex',
           flexDirection: 'column',
           minWidth: 0, // Prevent flex item from overflowing
           minHeight: isMobile ? '60vh' : 'auto'
@@ -3964,12 +4013,15 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           onReset={() => setState(prev => ({ ...prev, zoom: 1, pan: { x: 0, y: 0 }, rotation: 0 }))}
           onNavigateFrame={(direction) => {
             const newFrame = direction === 'next' ? Math.min(state.currentFrame + 1, state.totalFrames - 1) :
-                           direction === 'previous' ? Math.max(state.currentFrame - 1, 0) :
-                           direction === 'first' ? 0 : state.totalFrames - 1;
+              direction === 'previous' ? Math.max(state.currentFrame - 1, 0) :
+                direction === 'first' ? 0 : state.totalFrames - 1;
             setState(prev => ({ ...prev, currentFrame: newFrame }));
           }}
           onToolSelect={(tool) => setState(prev => ({ ...prev, activeTool: tool }))}
-          onSidebarToggle={() => setState(prev => ({ ...prev, sidebarOpen: !prev.sidebarOpen }))}
+          onSidebarToggle={() => {
+            console.log('🔧 Toggling sidebar, current state:', state.sidebarOpen);
+            setState(prev => ({ ...prev, sidebarOpen: !prev.sidebarOpen }));
+          }}
           isMobile={isMobile}
           userRole={userRole}
           mprMode={state.mprMode}
@@ -3978,10 +4030,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           onMPRToggle={() => setState(prev => ({ ...prev, mprMode: !prev.mprMode }))}
           onMPRViewerModeChange={(mode) => setState(prev => ({ ...prev, mprViewerMode: mode }))}
         />
-        
-        <Box 
-          sx={{ 
-            flex: 1, 
+
+        <Box
+          sx={{
+            flex: 1,
             overflow: 'hidden',
             position: 'relative',
             minHeight: isMobile ? 300 : 400
@@ -3994,7 +4046,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         <Box
           sx={{
             height: isMobile ? 52 : 44,
-            background: theme.palette.mode === 'dark' 
+            background: theme.palette.mode === 'dark'
               ? `linear-gradient(180deg, rgba(28, 28, 30, 0.95) 0%, rgba(44, 44, 46, 0.98) 100%)`
               : `linear-gradient(180deg, rgba(248, 248, 248, 0.95) 0%, rgba(242, 242, 247, 0.98) 100%)`,
             display: 'flex',
@@ -4005,7 +4057,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             position: 'relative',
             flexWrap: isMobile ? 'wrap' : 'nowrap',
             gap: isMobile ? 1 : 1.5,
-            boxShadow: theme.palette.mode === 'dark' 
+            boxShadow: theme.palette.mode === 'dark'
               ? '0 -1px 0 rgba(84, 84, 88, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
               : '0 -1px 0 rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
             '&::before': {
@@ -4023,9 +4075,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           }}
         >
           {/* Left Status Info - Apple HIG Style */}
-          <Stack 
-            direction={isMobile ? 'column' : 'row'} 
-            spacing={isMobile ? 0.5 : 1.5} 
+          <Stack
+            direction={isMobile ? 'column' : 'row'}
+            spacing={isMobile ? 0.5 : 1.5}
             alignItems={isMobile ? 'flex-start' : 'center'}
             sx={{ minWidth: 0 }}
           >
@@ -4040,14 +4092,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   fontSize: isMobile ? '0.7rem' : '0.8rem',
                   fontWeight: 600,
                   borderRadius: isMobile ? 2 : 2.5,
-                  background: theme.palette.mode === 'dark' 
+                  background: theme.palette.mode === 'dark'
                     ? 'linear-gradient(135deg, rgba(10, 132, 255, 0.9) 0%, rgba(30, 144, 255, 0.8) 100%)'
                     : 'linear-gradient(135deg, rgba(0, 122, 255, 0.9) 0%, rgba(30, 144, 255, 0.8) 100%)',
                   color: 'white',
-                  boxShadow: theme.palette.mode === 'dark' 
+                  boxShadow: theme.palette.mode === 'dark'
                     ? '0 2px 8px rgba(10, 132, 255, 0.3)'
                     : '0 2px 8px rgba(0, 122, 255, 0.25)',
-                  '& .MuiChip-label': { 
+                  '& .MuiChip-label': {
                     px: isMobile ? 1 : 1.5,
                     fontWeight: 600,
                     letterSpacing: '0.02em'
@@ -4055,19 +4107,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 }}
               />
               {!isMobile && (
-                <Box 
-                  sx={{ 
-                    width: 1, 
-                    height: 16, 
+                <Box
+                  sx={{
+                    width: 1,
+                    height: 16,
                     backgroundColor: theme.palette.mode === 'dark' ? 'rgba(84, 84, 88, 0.6)' : 'rgba(198, 198, 200, 0.8)',
                     borderRadius: 0.5
-                  }} 
+                  }}
                 />
               )}
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  fontWeight: 600, 
+              <Typography
+                variant="caption"
+                sx={{
+                  fontWeight: 600,
                   color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(60, 60, 67, 0.8)',
                   fontSize: isMobile ? '0.7rem' : '0.8rem',
                   whiteSpace: 'nowrap',
@@ -4077,7 +4129,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 {state.studyType.replace('-', ' ').toUpperCase()}
               </Typography>
             </Stack>
-            
+
             <Chip
               label={`${state.qualityLevel.charAt(0).toUpperCase() + state.qualityLevel.slice(1)} Quality`}
               size="small"
@@ -4087,21 +4139,21 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 fontSize: isMobile ? '0.65rem' : '0.75rem',
                 fontWeight: 500,
                 borderRadius: isMobile ? 2 : 2.5,
-                borderColor: state.qualityLevel === 'diagnostic' 
+                borderColor: state.qualityLevel === 'diagnostic'
                   ? (theme.palette.mode === 'dark' ? 'rgba(52, 199, 89, 0.8)' : 'rgba(52, 199, 89, 0.6)')
-                  : state.qualityLevel === 'high' 
-                  ? (theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 0.8)' : 'rgba(0, 122, 255, 0.6)')
-                  : state.qualityLevel === 'medium' 
-                  ? (theme.palette.mode === 'dark' ? 'rgba(255, 159, 10, 0.8)' : 'rgba(255, 149, 0, 0.6)')
-                  : (theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 0.8)' : 'rgba(142, 142, 147, 0.6)'),
-                color: state.qualityLevel === 'diagnostic' 
+                  : state.qualityLevel === 'high'
+                    ? (theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 0.8)' : 'rgba(0, 122, 255, 0.6)')
+                    : state.qualityLevel === 'medium'
+                      ? (theme.palette.mode === 'dark' ? 'rgba(255, 159, 10, 0.8)' : 'rgba(255, 149, 0, 0.6)')
+                      : (theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 0.8)' : 'rgba(142, 142, 147, 0.6)'),
+                color: state.qualityLevel === 'diagnostic'
                   ? (theme.palette.mode === 'dark' ? 'rgba(52, 199, 89, 1)' : 'rgba(52, 199, 89, 0.9)')
-                  : state.qualityLevel === 'high' 
-                  ? (theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 1)' : 'rgba(0, 122, 255, 0.9)')
-                  : state.qualityLevel === 'medium' 
-                  ? (theme.palette.mode === 'dark' ? 'rgba(255, 159, 10, 1)' : 'rgba(255, 149, 0, 0.9)')
-                  : (theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 1)' : 'rgba(142, 142, 147, 0.9)'),
-                '& .MuiChip-label': { 
+                  : state.qualityLevel === 'high'
+                    ? (theme.palette.mode === 'dark' ? 'rgba(10, 132, 255, 1)' : 'rgba(0, 122, 255, 0.9)')
+                    : state.qualityLevel === 'medium'
+                      ? (theme.palette.mode === 'dark' ? 'rgba(255, 159, 10, 1)' : 'rgba(255, 149, 0, 0.9)')
+                      : (theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 1)' : 'rgba(142, 142, 147, 0.9)'),
+                '& .MuiChip-label': {
                   px: isMobile ? 1 : 1.5,
                   fontWeight: 500,
                   letterSpacing: '0.01em'
@@ -4114,11 +4166,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           {!isMobile && <Box sx={{ flex: 1 }} />}
 
           {/* Right Status Info - Apple HIG Style */}
-          <Stack 
-            direction="row" 
-            spacing={isMobile ? 1 : 1.5} 
+          <Stack
+            direction="row"
+            spacing={isMobile ? 1 : 1.5}
             alignItems="center"
-            sx={{ 
+            sx={{
               minWidth: 0,
               ml: isMobile ? 'auto' : 0
             }}
@@ -4126,8 +4178,8 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             <Chip
               icon={
                 state.renderingMode === 'webgl' ? <HighQuality sx={{ fontSize: isMobile ? 14 : 16 }} /> :
-                state.renderingMode === 'gpu' ? <Speed sx={{ fontSize: isMobile ? 14 : 16 }} /> :
-                <Cached sx={{ fontSize: isMobile ? 14 : 16 }} />
+                  state.renderingMode === 'gpu' ? <Speed sx={{ fontSize: isMobile ? 14 : 16 }} /> :
+                    <Cached sx={{ fontSize: isMobile ? 14 : 16 }} />
               }
               label={isMobile ? state.renderingMode.toUpperCase().slice(0, 3) : state.renderingMode.toUpperCase()}
               size="small"
@@ -4137,35 +4189,35 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 fontSize: isMobile ? '0.65rem' : '0.75rem',
                 fontWeight: 500,
                 borderRadius: isMobile ? 2 : 2.5,
-                borderColor: state.renderingMode === 'webgl' 
+                borderColor: state.renderingMode === 'webgl'
                   ? (theme.palette.mode === 'dark' ? 'rgba(52, 199, 89, 0.8)' : 'rgba(52, 199, 89, 0.6)')
                   : (theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 0.6)' : 'rgba(142, 142, 147, 0.5)'),
-                color: state.renderingMode === 'webgl' 
+                color: state.renderingMode === 'webgl'
                   ? (theme.palette.mode === 'dark' ? 'rgba(52, 199, 89, 1)' : 'rgba(52, 199, 89, 0.9)')
                   : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(60, 60, 67, 0.8)'),
-                '& .MuiChip-label': { 
+                '& .MuiChip-label': {
                   px: isMobile ? 0.75 : 1,
                   fontWeight: 500,
                   letterSpacing: '0.01em'
                 },
-                '& .MuiChip-icon': { 
+                '& .MuiChip-icon': {
                   fontSize: isMobile ? 14 : 16,
                   color: 'inherit'
                 }
               }}
             />
-            
+
             {!isMobile && (
-              <Box 
-                sx={{ 
-                  width: 1, 
-                  height: 16, 
+              <Box
+                sx={{
+                  width: 1,
+                  height: 16,
                   backgroundColor: theme.palette.mode === 'dark' ? 'rgba(84, 84, 88, 0.6)' : 'rgba(198, 198, 200, 0.8)',
                   borderRadius: 0.5
-                }} 
+                }}
               />
             )}
-            
+
             <Badge
               badgeContent={state.annotations.length}
               color="primary"
@@ -4176,19 +4228,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   minWidth: isMobile ? 16 : 18,
                   borderRadius: 2,
                   fontWeight: 600,
-                  background: theme.palette.mode === 'dark' 
+                  background: theme.palette.mode === 'dark'
                     ? 'linear-gradient(135deg, rgba(255, 69, 58, 0.9) 0%, rgba(255, 105, 97, 0.8) 100%)'
                     : 'linear-gradient(135deg, rgba(255, 59, 48, 0.9) 0%, rgba(255, 105, 97, 0.8) 100%)',
-                  boxShadow: theme.palette.mode === 'dark' 
+                  boxShadow: theme.palette.mode === 'dark'
                     ? '0 2px 6px rgba(255, 69, 58, 0.3)'
                     : '0 2px 6px rgba(255, 59, 48, 0.25)'
                 }
               }}
             >
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  fontWeight: 500, 
+              <Typography
+                variant="caption"
+                sx={{
+                  fontWeight: 500,
                   color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(60, 60, 67, 0.8)',
                   fontSize: isMobile ? '0.7rem' : '0.8rem',
                   letterSpacing: '0.01em'
@@ -4197,19 +4249,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                 {isMobile ? 'Ann' : 'Annotations'}
               </Typography>
             </Badge>
-            
+
             {/* Memory Usage Indicator - Enhanced Apple Style */}
             {state.memoryUsage > 0 && !isMobile && (
               <>
-                <Box 
-                  sx={{ 
-                    width: 1, 
-                    height: 16, 
+                <Box
+                  sx={{
+                    width: 1,
+                    height: 16,
                     backgroundColor: theme.palette.mode === 'dark' ? 'rgba(84, 84, 88, 0.6)' : 'rgba(198, 198, 200, 0.8)',
                     borderRadius: 0.5
-                  }} 
+                  }}
                 />
-                <Tooltip 
+                <Tooltip
                   title={`Memory Usage: ${(state.memoryUsage / 1024 / 1024).toFixed(1)} MB`}
                   arrow
                   placement="top"
@@ -4232,13 +4284,13 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                       fontSize: '0.7rem',
                       fontWeight: 500,
                       borderRadius: 2.5,
-                      borderColor: state.memoryUsage > 500 * 1024 * 1024 
+                      borderColor: state.memoryUsage > 500 * 1024 * 1024
                         ? (theme.palette.mode === 'dark' ? 'rgba(255, 159, 10, 0.8)' : 'rgba(255, 149, 0, 0.6)')
                         : (theme.palette.mode === 'dark' ? 'rgba(142, 142, 147, 0.6)' : 'rgba(142, 142, 147, 0.5)'),
-                      color: state.memoryUsage > 500 * 1024 * 1024 
+                      color: state.memoryUsage > 500 * 1024 * 1024
                         ? (theme.palette.mode === 'dark' ? 'rgba(255, 159, 10, 1)' : 'rgba(255, 149, 0, 0.9)')
                         : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(60, 60, 67, 0.8)'),
-                      '& .MuiChip-label': { 
+                      '& .MuiChip-label': {
                         px: 1.5,
                         fontWeight: 500,
                         letterSpacing: '0.01em'
@@ -4272,10 +4324,10 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             >
               <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 {/* Mobile Panel Header */}
-                <Box 
-                  sx={{ 
-                    p: 2, 
-                    borderBottom: 1, 
+                <Box
+                  sx={{
+                    p: 2,
+                    borderBottom: 1,
                     borderColor: 'divider',
                     display: 'flex',
                     alignItems: 'center',
@@ -4285,14 +4337,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                   <Typography variant="h6" sx={{ fontWeight: 600 }}>
                     Advanced Tools
                   </Typography>
-                  <IconButton 
+                  <IconButton
                     onClick={() => setState(prev => ({ ...prev, sidebarOpen: false }))}
                     size="small"
                   >
                     <CloseIcon />
                   </IconButton>
                 </Box>
-                
+
                 {/* Mobile Panel Content */}
                 <Box sx={{ flex: 1, overflow: 'auto' }}>
                   {renderSidePanelContent()}
@@ -4301,12 +4353,12 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
             </Drawer>
           ) : (
             // Desktop: Fixed side panel
-            <Box 
-              sx={{ 
-                width: isTablet ? 300 : 350, 
-                borderLeft: 1, 
-                borderColor: 'divider', 
-                display: 'flex', 
+            <Box
+              sx={{
+                width: isTablet ? 300 : 350,
+                borderLeft: 1,
+                borderColor: 'divider',
+                display: 'flex',
                 flexDirection: 'column',
                 minWidth: 0
               }}

@@ -65,6 +65,7 @@ import {
   Cell,
 } from 'recharts';
 import { useMonitoring } from '../hooks/useMonitoring';
+import { monitoringService } from '../services/monitoringService';
 
 interface HealthCheck {
   name: string;
@@ -118,6 +119,7 @@ const MonitoringDashboard: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [realTimeEnabled, setRealTimeEnabled] = useState(false);
   
   const {
     systemHealth,
@@ -129,6 +131,22 @@ const MonitoringDashboard: React.FC = () => {
     error,
     refreshData
   } = useMonitoring(autoRefresh ? refreshInterval : 0);
+
+  // Initialize enhanced monitoring
+  useEffect(() => {
+    const initializeMonitoring = async () => {
+      try {
+        await monitoringService.initialize();
+        setRealTimeEnabled(true);
+        console.log('✅ Real-time monitoring enabled');
+      } catch (error) {
+        console.warn('⚠️ Real-time monitoring initialization failed:', error);
+        setRealTimeEnabled(false);
+      }
+    };
+
+    initializeMonitoring();
+  }, []);
 
   // Generate mock historical data for charts
   const generateHistoricalData = () => {
@@ -269,6 +287,12 @@ const MonitoringDashboard: React.FC = () => {
           {isLoading && (
             <CircularProgress size={20} sx={{ mr: 1 }} />
           )}
+          <Chip 
+            label={realTimeEnabled ? "Real-time Active" : "Mock Data"} 
+            color={realTimeEnabled ? "success" : "warning"}
+            size="small"
+            sx={{ mr: 1 }}
+          />
           <FormControlLabel
             control={
               <Switch

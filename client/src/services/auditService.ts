@@ -2,15 +2,20 @@ import { apiService } from './api';
 
 export interface AuditEvent {
   id: string;
-  event_type: 'report_created' | 'report_updated' | 'report_finalized' | 'report_deleted' | 'report_viewed' | 'report_exported' | 'report_sent';
+  event_type: 
+    | 'report_created' | 'report_updated' | 'report_finalized' | 'report_deleted' | 'report_viewed' | 'report_exported' | 'report_sent'
+    | 'device_discovered' | 'device_registered' | 'device_updated' | 'device_removed' | 'device_tested' | 'device_accessed'
+    | 'system_accessed' | 'network_scanned' | 'data_accessed'
+    | 'resource_created' | 'resource_updated' | 'resource_deleted';
   event_description: string;
   user_id: string;
   user_role: string;
-  resource_type: 'Report' | 'Study' | 'Patient';
+  resource_type: 'Report' | 'Study' | 'Patient' | 'Device' | 'Network' | 'System';
   resource_id: string;
   study_uid?: string;
   report_id?: string;
   patient_id?: string;
+  device_id?: string;
   ip_address?: string;
   timestamp: string;
   metadata?: {
@@ -19,6 +24,9 @@ export interface AuditEvent {
     export_format?: string;
     recipient?: string;
     action_details?: any;
+    device_info?: any;
+    network_info?: any;
+    test_results?: any;
   };
 }
 
@@ -30,6 +38,7 @@ export interface CreateAuditEventRequest {
   study_uid?: string;
   report_id?: string;
   patient_id?: string;
+  device_id?: string;
   metadata?: AuditEvent['metadata'];
 }
 
@@ -227,6 +236,122 @@ class AuditService {
     } catch (error) {
       console.error('❌ Failed to get audit events:', error);
       return { events: [], total: 0 };
+    }
+  }
+
+  /**
+   * Log device discovery event
+   */
+  async logDeviceDiscovered(deviceId: string, deviceInfo: any): Promise<void> {
+    await this.logEvent({
+      event_type: 'device_discovered',
+      event_description: `Medical device discovered: ${deviceInfo.name || deviceId}`,
+      resource_type: 'Device',
+      resource_id: deviceId,
+      device_id: deviceId,
+      metadata: {
+        device_info: deviceInfo,
+        action_details: {
+          discovery_method: deviceInfo.discoveryMethod,
+          device_type: deviceInfo.deviceType,
+          manufacturer: deviceInfo.manufacturer,
+          ip: deviceInfo.ip,
+          port: deviceInfo.port
+        }
+      }
+    });
+  }
+
+  /**
+   * Log device registration event
+   */
+  async logDeviceRegistered(deviceId: string, deviceInfo: any): Promise<void> {
+    await this.logEvent({
+      event_type: 'device_registered',
+      event_description: `Medical device registered: ${deviceInfo.name || deviceId}`,
+      resource_type: 'Device',
+      resource_id: deviceId,
+      device_id: deviceId,
+      metadata: {
+        device_info: deviceInfo,
+        action_details: {
+          device_type: deviceInfo.deviceType,
+          manufacturer: deviceInfo.manufacturer,
+          ip: deviceInfo.ip,
+          port: deviceInfo.port,
+          ae_title: deviceInfo.aeTitle
+        }
+      }
+    });
+  }
+
+  /**
+   * Log device test event
+   */
+  async logDeviceTested(deviceId: string, testResults: any): Promise<void> {
+    await this.logEvent({
+      event_type: 'device_tested',
+      event_description: `Medical device connectivity test: ${deviceId}`,
+      resource_type: 'Device',
+      resource_id: deviceId,
+      device_id: deviceId,
+      metadata: {
+        test_results: testResults,
+        action_details: {
+          tests_run: testResults.length,
+          success_rate: testResults.filter((r: any) => r.success).length / testResults.length,
+          total_response_time: testResults.reduce((sum: number, r: any) => sum + r.responseTime, 0)
+        }
+      }
+    });
+  }
+
+  /**
+   * Log device data access event
+   */
+  async logDeviceDataAccessed(deviceId: string, accessDetails: any): Promise<void> {
+    await this.logEvent({
+      event_type: 'device_accessed',
+      event_description: `Data accessed from medical device: ${deviceId}`,
+      resource_type: 'Device',
+      resource_id: deviceId,
+      device_id: deviceId,
+      metadata: {
+        action_details: accessDetails
+      }
+    });
+  }
+
+  /**
+   * Log network scan event
+   */
+  async logNetworkScan(scanDetails: any): Promise<void> {
+    await this.logEvent({
+      event_type: 'network_scanned',
+      event_description: 'Medical device network scan initiated',
+      resource_type: 'Network',
+      resource_id: 'device_discovery',
+      metadata: {
+        network_info: scanDetails,
+        action_details: {
+          ip_ranges: scanDetails.ipRanges,
+          ports: scanDetails.portRanges,
+          deep_scan: scanDetails.deepScan
+        }
+      }
+    });
+  }
+
+  /**
+   * Get audit events for a specific device
+   */
+  async getDeviceAuditTrail(deviceId: string): Promise<AuditEvent[]> {
+    try {
+      const response = await apiService.get<{ events: AuditEvent[] }>(`${this.baseUrl}/device/${deviceId}`);
+      return response.events || [];
+    } catch (error) {
+      console.error('❌ Failed to get device audit trail:', error);
+      return [];
     }
   }
 
