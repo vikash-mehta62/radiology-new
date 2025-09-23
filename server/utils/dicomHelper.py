@@ -24,24 +24,24 @@ def extract_dicom_slices(file_path, output_format='PNG', max_slices=None):
         # Read DICOM file
         ds = pydicom.dcmread(str(file_path), force=True)
         
-        # Enhanced metadata extraction with slice detection
+        # Enhanced metadata extraction with slice detection and JSON serialization
         metadata = {
-            'patient_name': str(getattr(ds, 'PatientName', 'Unknown')),
-            'patient_id': str(getattr(ds, 'PatientID', 'Unknown')),
-            'study_date': str(getattr(ds, 'StudyDate', '')),
-            'study_time': str(getattr(ds, 'StudyTime', '')),
-            'modality': str(getattr(ds, 'Modality', 'Unknown')),
-            'study_description': str(getattr(ds, 'StudyDescription', '')),
-            'series_description': str(getattr(ds, 'SeriesDescription', '')),
-            'institution_name': str(getattr(ds, 'InstitutionName', '')),
-            'manufacturer': str(getattr(ds, 'Manufacturer', '')),
+            'patient_name': dicom_value_to_json(getattr(ds, 'PatientName', 'Unknown')),
+            'patient_id': dicom_value_to_json(getattr(ds, 'PatientID', 'Unknown')),
+            'study_date': dicom_value_to_json(getattr(ds, 'StudyDate', '')),
+            'study_time': dicom_value_to_json(getattr(ds, 'StudyTime', '')),
+            'modality': dicom_value_to_json(getattr(ds, 'Modality', 'Unknown')),
+            'study_description': dicom_value_to_json(getattr(ds, 'StudyDescription', '')),
+            'series_description': dicom_value_to_json(getattr(ds, 'SeriesDescription', '')),
+            'institution_name': dicom_value_to_json(getattr(ds, 'InstitutionName', '')),
+            'manufacturer': dicom_value_to_json(getattr(ds, 'Manufacturer', '')),
             # Enhanced slice detection metadata
-            'number_of_frames': getattr(ds, 'NumberOfFrames', None),
-            'instance_number': getattr(ds, 'InstanceNumber', None),
-            'slice_thickness': getattr(ds, 'SliceThickness', None),
-            'slice_location': getattr(ds, 'SliceLocation', None),
-            'image_position_patient': getattr(ds, 'ImagePositionPatient', None),
-            'image_orientation_patient': getattr(ds, 'ImageOrientationPatient', None),
+            'number_of_frames': dicom_value_to_json(getattr(ds, 'NumberOfFrames', None)),
+            'instance_number': dicom_value_to_json(getattr(ds, 'InstanceNumber', None)),
+            'slice_thickness': dicom_value_to_json(getattr(ds, 'SliceThickness', None)),
+            'slice_location': dicom_value_to_json(getattr(ds, 'SliceLocation', None)),
+            'image_position_patient': dicom_value_to_json(getattr(ds, 'ImagePositionPatient', None)),
+            'image_orientation_patient': dicom_value_to_json(getattr(ds, 'ImageOrientationPatient', None)),
         }
         
         slices = []
@@ -396,6 +396,23 @@ def convert_dicom_to_png_file(file_path, output_dir, slice_index=0):
             'error': str(e)
         }
 
+def dicom_value_to_json(value):
+    """
+    Convert DICOM values (including MultiValue) to JSON-serializable format
+    """
+    if value is None:
+        return None
+    
+    # Handle MultiValue objects
+    if hasattr(value, '__iter__') and not isinstance(value, (str, bytes)):
+        try:
+            return [str(item) for item in value]
+        except:
+            return str(value)
+    
+    # Handle other DICOM objects
+    return str(value)
+
 def get_dicom_info(file_path):
     """
     Get basic DICOM file information without processing pixel data
@@ -406,13 +423,13 @@ def get_dicom_info(file_path):
         ds = pydicom.dcmread(str(file_path), force=True)
         
         info = {
-            'patient_name': str(getattr(ds, 'PatientName', 'Unknown')),
-            'patient_id': str(getattr(ds, 'PatientID', 'Unknown')),
-            'study_date': str(getattr(ds, 'StudyDate', '')),
-            'study_time': str(getattr(ds, 'StudyTime', '')),
-            'modality': str(getattr(ds, 'Modality', 'Unknown')),
-            'study_description': str(getattr(ds, 'StudyDescription', '')),
-            'series_description': str(getattr(ds, 'SeriesDescription', '')),
+            'patient_name': dicom_value_to_json(getattr(ds, 'PatientName', 'Unknown')),
+            'patient_id': dicom_value_to_json(getattr(ds, 'PatientID', 'Unknown')),
+            'study_date': dicom_value_to_json(getattr(ds, 'StudyDate', '')),
+            'study_time': dicom_value_to_json(getattr(ds, 'StudyTime', '')),
+            'modality': dicom_value_to_json(getattr(ds, 'Modality', 'Unknown')),
+            'study_description': dicom_value_to_json(getattr(ds, 'StudyDescription', '')),
+            'series_description': dicom_value_to_json(getattr(ds, 'SeriesDescription', '')),
             'has_pixel_data': hasattr(ds, 'pixel_array'),
             'file_size': os.path.getsize(file_path)
         }

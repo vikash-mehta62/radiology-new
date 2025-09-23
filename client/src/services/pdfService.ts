@@ -73,6 +73,7 @@ export class PDFService {
     options: PDFOptions
   ): string {
     const currentDate = new Date().toLocaleDateString();
+    const currentTime = new Date().toLocaleTimeString();
     const studyDate = study.study_date ? new Date(study.study_date).toLocaleDateString() : 'N/A';
     
     return `
@@ -284,6 +285,17 @@ export class PDFService {
             margin-bottom: 10px;
         }
         
+        .priority-urgent {
+            color: #ff6600;
+            font-weight: bold;
+        }
+        
+        .priority-stat {
+            color: #ff0000;
+            font-weight: bold;
+            text-decoration: underline;
+        }
+        
         .footer {
             margin-top: 50px;
             border-top: 1px solid #ccc;
@@ -337,6 +349,10 @@ export class PDFService {
                 <div class="info-label">Report Date:</div>
                 <div class="info-value">${currentDate}</div>
             </div>
+            <div class="info-row">
+                <div class="info-label">Priority:</div>
+                <div class="info-value ${report.priority === 'urgent' ? 'priority-urgent' : report.priority === 'stat' ? 'priority-stat' : ''}">${report.priority?.toUpperCase() || 'ROUTINE'}</div>
+            </div>
         </div>
         
         <div class="study-info">
@@ -360,11 +376,66 @@ export class PDFService {
         </div>
     </div>
     
+    ${report.clinical_indication ? `
+    <div class="section">
+        <div class="section-title">Clinical Indication</div>
+        <div class="section-content">
+            ${this.formatTextContent(report.clinical_indication)}
+        </div>
+    </div>
+    ` : ''}
+    
+    ${report.clinical_history ? `
+    <div class="section">
+        <div class="section-title">Clinical History</div>
+        <div class="section-content">
+            ${this.formatTextContent(report.clinical_history)}
+        </div>
+    </div>
+    ` : ''}
+    
+    ${report.technique ? `
+    <div class="section">
+        <div class="section-title">Technique</div>
+        <div class="section-content">
+            ${this.formatTextContent(report.technique)}
+        </div>
+    </div>
+    ` : ''}
+    
+    ${report.comparison ? `
+    <div class="section">
+        <div class="section-title">Comparison</div>
+        <div class="section-content">
+            ${this.formatTextContent(report.comparison)}
+        </div>
+    </div>
+    ` : ''}
+    
     ${report.findings ? `
     <div class="section">
-        <div class="section-title">Clinical Findings</div>
+        <div class="section-title">Findings</div>
         <div class="section-content">
             ${this.formatTextContent(report.findings)}
+        </div>
+    </div>
+    ` : ''}
+    
+    ${report.detailed_findings ? `
+    <div class="section">
+        <div class="section-title">Detailed Findings</div>
+        <div class="section-content">
+            ${this.formatTextContent(report.detailed_findings)}
+        </div>
+    </div>
+    ` : ''}
+    
+    ${report.critical_findings ? `
+    <div class="critical-alert">
+        <div class="alert-title">*** CRITICAL FINDINGS ***</div>
+        <div>${this.formatTextContent(report.critical_findings)}</div>
+        <div style="margin-top: 10px; font-weight: bold;">
+            This critical finding was communicated to the referring physician on ${currentDate} at ${currentTime}.
         </div>
     </div>
     ` : ''}
@@ -413,6 +484,24 @@ export class PDFService {
         <div class="section-title">Recommendations</div>
         <div class="section-content">
             ${this.formatTextContent(report.recommendations)}
+        </div>
+    </div>
+    ` : ''}
+    
+    ${report.follow_up ? `
+    <div class="section">
+        <div class="section-title">Follow-up</div>
+        <div class="section-content">
+            ${this.formatTextContent(report.follow_up)}
+        </div>
+    </div>
+    ` : ''}
+    
+    ${report.referring_physician ? `
+    <div class="section">
+        <div class="section-title">Referring Physician</div>
+        <div class="section-content">
+            ${report.referring_physician}
         </div>
     </div>
     ` : ''}
@@ -606,6 +695,17 @@ startxref
       includeSignatures: true,
       letterhead: true
     });
+  }
+
+  /**
+   * Generate PDF - alias for generateReportPDF for compatibility
+   */
+  async generatePDF(
+    report: Report,
+    study: Study,
+    signatures: DigitalSignature[] = []
+  ): Promise<Blob> {
+    return this.generateReportPDF(report, study, signatures);
   }
 }
 

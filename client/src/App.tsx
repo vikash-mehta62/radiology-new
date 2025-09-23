@@ -30,6 +30,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const WorkflowTestPage = lazy(() => import('./pages/WorkflowTestPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DebugReports = lazy(() => import('./pages/DebugReports'));
+const Reports = lazy(() => import('./pages/Reports'));
 
 // Theme is now handled by ThemeProvider context
 
@@ -169,6 +170,17 @@ function App() {
                     element={
                       shouldAuthenticate ? (
                         <ReportEditor />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    }
+                  />
+                  
+                  <Route
+                    path="/reports"
+                    element={
+                      shouldAuthenticate ? (
+                        <Reports />
                       ) : (
                         <Navigate to="/login" replace />
                       )

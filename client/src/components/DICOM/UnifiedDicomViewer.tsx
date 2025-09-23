@@ -3430,133 +3430,277 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         </Box>
 
         {/* Frame Navigation Controls */}
-        <Box sx={{
-          position: 'absolute',
-          bottom: 16,
+        <Box sx={{ 
+          position: 'absolute', 
+          bottom: 20, 
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'flex',
+          alignItems: 'center',
           gap: 1,
-          bgcolor: 'rgba(0, 0, 0, 0.7)',
-          borderRadius: 2,
-          p: 1
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(15px)',
+          borderRadius: 3,
+          px: 3,
+          py: 1.5,
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
         }}>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => navigateFrame('first')}
-            disabled={state.currentFrame === 0}
-          >
-            First
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => navigateFrame('previous')}
-            disabled={state.currentFrame === 0}
-          >
-            <SkipPrevious />
-          </Button>
-          <Typography 
-            variant="body2" 
-            sx={{ 
-              color: 'white', 
-              alignSelf: 'center', 
-              px: 2,
-              minWidth: '80px',
-              textAlign: 'center'
-            }}
-          >
-            {state.currentFrame + 1} / {Math.max(1, state.totalFrames)}
-          </Typography>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => navigateFrame('next')}
-            disabled={state.currentFrame === Math.max(1, state.totalFrames) - 1}
-          >
-            <SkipNext />
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => navigateFrame('last')}
-            disabled={state.currentFrame === Math.max(1, state.totalFrames) - 1}
-          >
-            Last
-          </Button>
+          <Tooltip title="First slice" arrow>
+            <span>
+              <IconButton
+                size="small"
+                onClick={() => navigateFrame('first')}
+                disabled={state.currentFrame === 0}
+                sx={{ 
+                  color: 'white',
+                  '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
+                  '&:disabled': { color: 'rgba(255,255,255,0.3)' }
+                }}
+              >
+                <SkipPrevious fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          
+          <Tooltip title="Previous slice" arrow>
+            <span>
+              <IconButton
+                size="small"
+                onClick={() => navigateFrame('previous')}
+                disabled={state.currentFrame === 0}
+                sx={{ 
+                  color: 'white',
+                  '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
+                  '&:disabled': { color: 'rgba(255,255,255,0.3)' }
+                }}
+              >
+                <SkipPrevious fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          
+          {/* Enhanced frame counter with progress bar */}
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center',
+            minWidth: 120,
+            mx: 2
+          }}>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                color: 'white', 
+                fontWeight: 'bold',
+                mb: 0.5
+              }}
+            >
+              {state.currentFrame + 1} / {Math.max(1, state.totalFrames)}
+            </Typography>
+            <LinearProgress
+              variant="determinate"
+              value={((state.currentFrame + 1) / Math.max(1, state.totalFrames)) * 100}
+              sx={{
+                width: '100%',
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: 'rgba(255,255,255,0.2)',
+                '& .MuiLinearProgress-bar': {
+                  borderRadius: 2,
+                  background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)'
+                }
+              }}
+            />
+          </Box>
+          
+          <Tooltip title="Next slice" arrow>
+            <span>
+              <IconButton
+                size="small"
+                onClick={() => navigateFrame('next')}
+                disabled={state.currentFrame === state.totalFrames - 1}
+                sx={{ 
+                  color: 'white',
+                  '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
+                  '&:disabled': { color: 'rgba(255,255,255,0.3)' }
+                }}
+              >
+                <SkipNext fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          
+          <Tooltip title="Last slice" arrow>
+            <span>
+              <IconButton
+                size="small"
+                onClick={() => navigateFrame('last')}
+                disabled={state.currentFrame === state.totalFrames - 1}
+                sx={{ 
+                  color: 'white',
+                  '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
+                  '&:disabled': { color: 'rgba(255,255,255,0.3)' }
+                }}
+              >
+                <SkipNext />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Box>
 
-        {/* Zoom Controls */}
+        {/* Enhanced Zoom and Tool Controls */}
         <Box sx={{ 
           position: 'absolute', 
-          top: 16, 
-          left: 16,
+          top: 20, 
+          left: 20,
           display: 'flex',
           flexDirection: 'column',
-          gap: 1
+          gap: 1,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(15px)',
+          borderRadius: 2,
+          p: 1.5,
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
         }}>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => handleZoom(0.1)}
-          >
-            <ZoomIn />
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => handleZoom(-0.1)}
-          >
-            <ZoomOut />
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => handleRotate(90)}
-          >
-            <RotateRight />
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => handleRotate(-90)}
-          >
-            <RotateLeft />
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={handleReset}
-          >
-            <RestartAlt />
-          </Button>
+          <Tooltip title="Zoom in" arrow placement="right">
+            <IconButton
+              size="small"
+              onClick={() => handleZoom(0.1)}
+              sx={{ 
+                color: 'white',
+                '&:hover': { 
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  transform: 'scale(1.1)'
+                },
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <ZoomIn />
+            </IconButton>
+          </Tooltip>
+          
+          <Tooltip title="Zoom out" arrow placement="right">
+            <IconButton
+              size="small"
+              onClick={() => handleZoom(-0.1)}
+              sx={{ 
+                color: 'white',
+                '&:hover': { 
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  transform: 'scale(1.1)'
+                },
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <ZoomOut />
+            </IconButton>
+          </Tooltip>
+          
+          <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+          
+          <Tooltip title="Rotate right" arrow placement="right">
+            <IconButton
+              size="small"
+              onClick={() => handleRotate(90)}
+              sx={{ 
+                color: 'white',
+                '&:hover': { 
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  transform: 'scale(1.1)'
+                },
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <RotateRight />
+            </IconButton>
+          </Tooltip>
+          
+          <Tooltip title="Rotate left" arrow placement="right">
+            <IconButton
+              size="small"
+              onClick={() => handleRotate(-90)}
+              sx={{ 
+                color: 'white',
+                '&:hover': { 
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  transform: 'scale(1.1)'
+                },
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <RotateLeft />
+            </IconButton>
+          </Tooltip>
+          
+          <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+          
+          <Tooltip title="Reset view" arrow placement="right">
+            <IconButton
+              size="small"
+              onClick={handleReset}
+              sx={{ 
+                color: 'white',
+                '&:hover': { 
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  transform: 'scale(1.1)'
+                },
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <RestartAlt />
+            </IconButton>
+          </Tooltip>
           
           {/* Text Annotation and Drawing Tools */}
           {enableAdvancedTools && (
             <>
-              <Button
-                variant={state.textAnnotationMode === 'text' ? 'contained' : 'outlined'}
-                size="small"
-                onClick={() => setState(prev => ({ 
-                  ...prev, 
-                  textAnnotationMode: prev.textAnnotationMode === 'text' ? null : 'text' 
-                }))}
-                color={state.textAnnotationMode === 'text' ? 'primary' : 'inherit'}
-              >
-                <TextFields />
-              </Button>
-              <Button
-                variant={state.textAnnotationMode === 'drawing' ? 'contained' : 'outlined'}
-                size="small"
-                onClick={() => setState(prev => ({ 
-                  ...prev, 
-                  textAnnotationMode: prev.textAnnotationMode === 'drawing' ? null : 'drawing' 
-                }))}
-                color={state.textAnnotationMode === 'drawing' ? 'primary' : 'inherit'}
-              >
-                <Brush />
-              </Button>
+              <Divider sx={{ my: 0.5, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+              
+              <Tooltip title="Text annotation" arrow placement="right">
+                <IconButton
+                  size="small"
+                  onClick={() => setState(prev => ({ 
+                    ...prev, 
+                    textAnnotationMode: prev.textAnnotationMode === 'text' ? null : 'text',
+                    textAnnotationsEnabled: prev.textAnnotationMode !== 'text'
+                  }))}
+                  sx={{ 
+                    color: state.textAnnotationMode === 'text' ? '#667eea' : 'white',
+                    backgroundColor: state.textAnnotationMode === 'text' ? 'rgba(102, 126, 234, 0.2)' : 'transparent',
+                    '&:hover': { 
+                      backgroundColor: state.textAnnotationMode === 'text' ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.1)',
+                      transform: 'scale(1.1)'
+                    },
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <TextFields />
+                </IconButton>
+              </Tooltip>
+              
+              <Tooltip title="Drawing tool" arrow placement="right">
+                <IconButton
+                  size="small"
+                  onClick={() => setState(prev => ({ 
+                    ...prev, 
+                    textAnnotationMode: prev.textAnnotationMode === 'drawing' ? null : 'drawing',
+                    textAnnotationsEnabled: prev.textAnnotationMode !== 'drawing'
+                  }))}
+                  sx={{ 
+                    color: state.textAnnotationMode === 'drawing' ? '#667eea' : 'white',
+                    backgroundColor: state.textAnnotationMode === 'drawing' ? 'rgba(102, 126, 234, 0.2)' : 'transparent',
+                    '&:hover': { 
+                      backgroundColor: state.textAnnotationMode === 'drawing' ? 'rgba(102, 126, 234, 0.3)' : 'rgba(255,255,255,0.1)',
+                      transform: 'scale(1.1)'
+                    },
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Brush />
+                </IconButton>
+              </Tooltip>
             </>
           )}
         </Box>

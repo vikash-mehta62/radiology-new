@@ -73,11 +73,20 @@ export interface Report {
   diagnosis_codes?: string[];
   cpt_codes?: string[];
   status: ReportStatus;
+  priority?: 'routine' | 'urgent' | 'stat';
   ai_confidence?: number;
   ai_generated: boolean;
   created_at: string;
   updated_at?: string;
   finalized_at?: string;
+  clinical_indication?: string;
+  clinical_history?: string;
+  technique?: string;
+  comparison?: string;
+  detailed_findings?: string;
+  critical_findings?: string;
+  follow_up?: string;
+  referring_physician?: string;
 }
 
 export type ReportStatus = 'draft' | 'final' | 'billed';

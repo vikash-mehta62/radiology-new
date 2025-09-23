@@ -83,6 +83,7 @@ const StudyViewer: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
   // Removed viewerTab - using only unified viewer now
   const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false)
+  const [showCreateReportDialog, setShowCreateReportDialog] = useState(false)
   const [threeDSettings, setThreeDSettings] = useState({
     renderMode: 'volume' as 'volume' | 'mip' | 'surface' | 'raycast',
     opacity: 0.8,
@@ -210,7 +211,7 @@ const StudyViewer: React.FC = () => {
 
   const handleCreateReport = () => {
     console.log("Create report for study:", studyUid)
-    // TODO: Implement report creation
+    setShowCreateReportDialog(true)
   }
 
 
@@ -1060,10 +1061,19 @@ const StudyViewer: React.FC = () => {
               </Card>
             </Box>
           </Box>
-        </Box>
       </Box>
     </Box>
-  )
+
+    {/* Create Report Dialog */}
+    {study && (
+      <CreateReportDialog
+        open={showCreateReportDialog}
+        onClose={() => setShowCreateReportDialog(false)}
+        study={study}
+      />
+    )}
+  </Box>
+)
 }
 
 export default StudyViewer;

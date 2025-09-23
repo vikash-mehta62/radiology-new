@@ -11,6 +11,8 @@ const studiesRouter = require('./routes/studies');
 const debugRouter = require('./routes/debug');
 const uploadsRouter = require('./routes/uploads');
 const dicomProcessingRoutes = require('./routes/dicomProcessing');
+const reportsRouter = require('./routes/reports');
+const auditRouter = require('./routes/audit');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -52,6 +54,8 @@ app.use('/studies', studiesRouter);
 app.use('/debug', debugRouter);
 app.use('/uploads', uploadsRouter);
 app.use('/dicom', dicomProcessingRoutes);
+app.use('/api/reports', reportsRouter);
+app.use('/api/audit', auditRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
