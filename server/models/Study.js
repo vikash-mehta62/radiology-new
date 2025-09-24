@@ -81,6 +81,15 @@ const studySchema = new mongoose.Schema({
   },
   file_url: String,
   
+  // Image URLs for DICOM viewer
+  image_urls: [{
+    type: String
+  }],
+  image_urls_count: {
+    type: Number,
+    default: 0
+  },
+  
   // System fields
   active: {
     type: Boolean,

@@ -56,6 +56,7 @@ import Navigation3DWorking from './Navigation3DWorking';
 import Navigation3DMainCanvas from './Navigation3DMainCanvas';
 import Navigation3DDiagnostic from './Navigation3DDiagnostic';
 import CanvasTest from './CanvasTest';
+import BackendApiTester from './BackendApiTester';
 import { 
   Navigation3DState, 
   getDefaultNavigation3DState, 
@@ -246,6 +247,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   const shaderOptimizerRef = useRef<ShaderOptimizer | null>(null);
   const performanceTesterRef = useRef<PerformanceTester | null>(null);
   const memoryMonitorRef = useRef<MemoryMonitor | null>(null);
+  
+  // Flag to prevent recursive dynamic slice detection
+  const [sliceDetectionCompleted, setSliceDetectionCompleted] = useState(false);
+  
+  // GPU Memory monitoring and optimization
+  const [gpuMemoryInfo, setGpuMemoryInfo] = useState<{
+    usedJSHeapSize: number;
+    totalJSHeapSize: number;
+    jsHeapSizeLimit: number;
+    webglMemoryUsage?: number;
+    textureMemoryUsage?: number;
+  } | null>(null);
+  
   const [state, setState] = useState<ViewerState>({
     isLoading: true,
     error: null,
@@ -660,10 +674,29 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
   // Auto-display first frame when images are loaded
   useEffect(() => {
-    if (state.imageData.length > 0 && !state.isLoading) {
+    console.log('🔄 [DEBUG] useEffect triggered:', {
+      currentFrame: state.currentFrame,
+      imageDataLength: state.imageData.length,
+      isLoading: state.isLoading,
+      hasCurrentFrameData: !!state.imageData[state.currentFrame]
+    });
+
+    if (state.imageData.length > 0 && !state.isLoading && state.imageData[state.currentFrame]) {
+      console.log('✅ [DEBUG] All conditions met, calling displaySlice for frame:', state.currentFrame);
       displaySlice(state.currentFrame);
+    } else if (state.imageData.length > 0 && !state.isLoading) {
+      console.log('⚠️ [DEBUG] No data for current frame, trying frame 0');
+      if (state.imageData[0]) {
+        displaySlice(0);
+      }
+    } else {
+      console.log('⚠️ [DEBUG] Conditions not met for displaySlice:', {
+        hasImageData: state.imageData.length > 0,
+        notLoading: !state.isLoading,
+        currentFrame: state.currentFrame
+      });
     }
-  }, [state.currentFrame, state.isLoading]);
+  }, [state.currentFrame, state.isLoading, state.imageData.length]);
 
   const initializeViewer = useCallback(async () => {
     console.log('🚀 [UnifiedViewer] Initializing viewer for study:', study.id);
@@ -696,7 +729,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           // Initial render with current navigation state
           navigation3DRenderer.updateRendering(navigationState, state.imageData);
         } else {
-          console.warn('⚠️ [UnifiedViewer] Failed to initialize Navigation3D renderer');
+          console.log('ℹ️ [UnifiedViewer] Navigation3D renderer initialization skipped');
         }
 
         // Initialize texture pool with WebGL context if available
@@ -704,11 +737,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           memoryManagerRef.current.initializeTexturePool(webglContextRef.current as WebGL2RenderingContext);
           console.log('🎯 [UnifiedViewer] Texture pool initialized with WebGL context');
         } else {
-          console.warn('⚠️ [UnifiedViewer] WebGL not supported, falling back to Canvas 2D');
+          console.log('ℹ️ [UnifiedViewer] WebGL not supported, using Canvas 2D rendering');
           setState(prev => ({ ...prev, renderingMode: 'software' }));
         }
       } else {
-        console.warn('⚠️ [UnifiedViewer] Canvas not available for renderer initialization');
+        console.log('ℹ️ [UnifiedViewer] Canvas not yet available, will initialize on next render');
       }
 
       // Load initial batch of images and set up proper frame count
@@ -734,6 +767,29 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       }));
 
       console.log('✅ [UnifiedViewer] Viewer initialized successfully');
+      
+      // Final emergency backup to ensure image displays
+      setTimeout(() => {
+        console.log('🚨 [DEBUG] Final check: Ensuring first image is displayed');
+        
+        // Get current state at this point
+        setState(currentState => {
+          console.log('🔍 [DEBUG] Final state check:', {
+            imageDataLength: currentState.imageData.length,
+            currentFrame: currentState.currentFrame,
+            isLoading: currentState.isLoading,
+            hasFirstImage: !!currentState.imageData[0]
+          });
+          
+          // If we have image data but canvas might be blank, force display
+          if (currentState.imageData.length > 0 && !currentState.isLoading) {
+            console.log('🎯 [DEBUG] Final emergency display attempt');
+            setTimeout(() => displaySlice(0), 100);
+          }
+          
+          return currentState; // No state change, just checking
+        });
+      }, 1000);
 
     } catch (error) {
       console.error('❌ [UnifiedViewer] Failed to initialize viewer:', error);
@@ -1090,18 +1146,46 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   }, [state.batchSize, state.totalFrames, state.loadedBatches, state.isLoadingBatch]);
 
   // Memory cleanup for large multi-slice studies
-  const cleanupDistantBatches = useCallback((currentBatch: number, keepDistance: number) => {
-    const batchesToRemove = [];
+  // Smart caching system - keep up to 100 slices in memory
+  const MAX_CACHED_SLICES = 100;
+  const CACHE_CLEANUP_THRESHOLD = 120; // Start cleanup when we exceed this
 
+  const cleanupDistantBatches = useCallback((currentBatch: number, keepDistance: number) => {
+    // Calculate total cached slices
+    const totalCachedSlices = state.imageData.filter(data => data !== null).length;
+    
+    console.log(`🧹 [CACHE] Current cached slices: ${totalCachedSlices}/${MAX_CACHED_SLICES}`);
+    
+    // Only cleanup if we exceed the threshold
+    if (totalCachedSlices <= CACHE_CLEANUP_THRESHOLD) {
+      console.log(`✅ [CACHE] No cleanup needed, under threshold (${totalCachedSlices}/${CACHE_CLEANUP_THRESHOLD})`);
+      return;
+    }
+
+    const batchesToRemove = [];
+    const batchDistances = [];
+
+    // Calculate distances for all batches
     state.loadedBatches.forEach((_, batchIndex) => {
       const distance = Math.abs(batchIndex - currentBatch);
-      if (distance > keepDistance) {
-        batchesToRemove.push(batchIndex);
-      }
+      batchDistances.push({ batchIndex, distance });
     });
 
+    // Sort by distance (furthest first) and remove the furthest batches
+    batchDistances.sort((a, b) => b.distance - a.distance);
+    
+    // Remove batches until we're under the max cache limit
+    let slicesToRemove = totalCachedSlices - MAX_CACHED_SLICES;
+    for (const { batchIndex, distance } of batchDistances) {
+      if (slicesToRemove <= 0) break;
+      if (distance > keepDistance) { // Still respect minimum keep distance
+        batchesToRemove.push(batchIndex);
+        slicesToRemove -= state.batchSize;
+      }
+    }
+
     if (batchesToRemove.length > 0) {
-      console.log(`🧹 [UnifiedViewer] Cleaning up ${batchesToRemove.length} distant batches:`, batchesToRemove);
+      console.log(`🧹 [CACHE] Smart cleanup: removing ${batchesToRemove.length} distant batches:`, batchesToRemove);
 
       setState(prev => {
         const newLoadedBatches = new Set(prev.loadedBatches);
@@ -1118,14 +1202,74 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           }
         });
 
+        const remainingCachedSlices = newImageData.filter(data => data !== null).length;
+        console.log(`✅ [CACHE] Cleanup complete: ${remainingCachedSlices} slices remaining in cache`);
+
         return {
           ...prev,
           loadedBatches: newLoadedBatches,
           imageData: newImageData
         };
       });
+    } else {
+      console.log(`ℹ️ [CACHE] No distant batches to remove (all within keep distance: ${keepDistance})`);
     }
-  }, [state.batchSize, state.totalFrames]);
+  }, [state.batchSize, state.totalFrames, state.loadedBatches, state.imageData]);
+
+  // Monitor GPU and system memory usage
+  const monitorMemoryUsage = useCallback(() => {
+    if (typeof window !== 'undefined' && (window as any).performance?.memory) {
+      const memInfo = (window as any).performance.memory;
+      
+      let webglMemoryUsage = 0;
+      let textureMemoryUsage = 0;
+      
+      // Estimate WebGL memory usage if context is available
+      if (webglContextRef.current) {
+        const gl = webglContextRef.current;
+        
+        // Estimate texture memory usage based on loaded images
+        const loadedImageCount = state.imageData.filter(data => data !== null).length;
+        const estimatedTextureSize = 512 * 512 * 4; // RGBA bytes per texture
+        textureMemoryUsage = loadedImageCount * estimatedTextureSize;
+        
+        // Estimate total WebGL memory usage
+        webglMemoryUsage = textureMemoryUsage + (1024 * 1024); // Add 1MB for buffers, shaders, etc.
+      }
+      
+      const memoryInfo = {
+        usedJSHeapSize: memInfo.usedJSHeapSize,
+        totalJSHeapSize: memInfo.totalJSHeapSize,
+        jsHeapSizeLimit: memInfo.jsHeapSizeLimit,
+        webglMemoryUsage,
+        textureMemoryUsage
+      };
+      
+      setGpuMemoryInfo(memoryInfo);
+      
+      // Log memory usage for debugging
+      console.log(`🧠 [MEMORY] JS Heap: ${(memInfo.usedJSHeapSize / 1024 / 1024).toFixed(1)}MB / ${(memInfo.totalJSHeapSize / 1024 / 1024).toFixed(1)}MB`);
+      console.log(`🎮 [GPU] Estimated WebGL Memory: ${(webglMemoryUsage / 1024 / 1024).toFixed(1)}MB`);
+      console.log(`🖼️ [TEXTURE] Estimated Texture Memory: ${(textureMemoryUsage / 1024 / 1024).toFixed(1)}MB`);
+      console.log(`📊 [CACHE] Cached Images: ${state.imageData.filter(data => data !== null).length}/${state.imageData.length}`);
+      
+      // Warn if memory usage is high
+      const memoryUsagePercent = (memInfo.usedJSHeapSize / memInfo.jsHeapSizeLimit) * 100;
+      if (memoryUsagePercent > 80) {
+        console.warn(`⚠️ [MEMORY] High memory usage: ${memoryUsagePercent.toFixed(1)}%`);
+        
+        // Trigger more aggressive cleanup if memory is critically high
+        if (memoryUsagePercent > 90) {
+          console.warn(`🚨 [MEMORY] Critical memory usage, triggering cleanup`);
+          const currentBatch = Math.floor(state.currentFrame / state.batchSize);
+          cleanupDistantBatches(currentBatch, 3); // More aggressive cleanup
+        }
+      }
+      
+      return memoryInfo;
+    }
+    return null;
+  }, [state.imageData, state.currentFrame, state.batchSize, cleanupDistantBatches]);
 
   const loadBatch = async (batchIndex: number) => {
     // Check if batch is already loaded or currently loading
@@ -1145,8 +1289,9 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       const patientId = pathParts[pathParts.length - 2] || study.patient_id;
 
       // For the first batch, perform dynamic slice detection
-      if (batchIndex === 0) {
+      if (batchIndex === 0 && !sliceDetectionCompleted) {
         console.log('🔍 [UnifiedViewer] Performing dynamic slice detection for first batch');
+        setSliceDetectionCompleted(true); // Prevent recursive detection
 
         // Call the enhanced slice detection endpoint
         const detectionUrl = `http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&auto_detect=true&t=${Date.now()}`;
@@ -1208,6 +1353,72 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
                     batchSize: Math.min(16, Math.max(8, Math.ceil(detectedSlices / 12))) // Adaptive batch size for large studies
                   }));
                 }
+
+                // CRITICAL FIX: Only reload batch if we haven't already detected slices and the size is actually wrong
+                const needsBatchReload = !sliceDetectionCompleted && state.imageData.length < detectedSlices;
+                console.log('🔄 [DEBUG] Checking if batch reload needed:', {
+                  currentImageDataLength: state.imageData.length,
+                  detectedSlices,
+                  sliceDetectionCompleted,
+                  needsReload: needsBatchReload
+                });
+                
+                if (needsBatchReload) {
+                  console.log('🔄 [DEBUG] Reloading batch 0 with correct totalFrames:', detectedSlices);
+                  
+                  // Mark slice detection as completed to prevent future reloads
+                  setSliceDetectionCompleted(true);
+                  
+                  // Clear batch 0 from loaded batches so it can be reloaded
+                  setState(prev => {
+                    const newState = {
+                      ...prev,
+                      loadedBatches: new Set([...prev.loadedBatches].filter(b => b !== 0)),
+                      imageData: new Array(detectedSlices).fill(null) // Initialize with correct size
+                    };
+                    
+                    console.log('🔍 [DEBUG] State updated for batch reload:', {
+                      totalFrames: newState.totalFrames,
+                      imageDataLength: newState.imageData.length,
+                      loadedBatches: Array.from(newState.loadedBatches)
+                    });
+                    
+                    return newState;
+                  });
+                
+                  // Reload batch 0 with correct frame count
+                  setTimeout(() => {
+                    console.log('🎯 [DEBUG] Reloading batch 0 with totalFrames:', detectedSlices);
+                    
+                    // Preserve current frame during reload - but don't interfere with ongoing navigation
+                    const currentFrameToPreserve = state.currentFrame;
+                    console.log('🔍 [DEBUG] Preserving current frame during reload:', currentFrameToPreserve);
+                    
+                    loadBatch(0).then(() => {
+                      console.log('✅ [DEBUG] Batch 0 reloaded successfully with frames 0-14');
+                      
+                      // Only display preserved frame if we're still on frame 0 or if no navigation is in progress
+                      // This prevents interfering with ongoing frame navigation
+                      setState(currentState => {
+                        if (currentState.currentFrame === 0 || currentState.currentFrame === currentFrameToPreserve) {
+                          console.log('🎨 [DEBUG] Displaying preserved frame after reload:', currentFrameToPreserve);
+                          setTimeout(() => displaySlice(currentFrameToPreserve), 100);
+                        } else {
+                          console.log('🚫 [DEBUG] Skipping preserved frame display - navigation in progress to frame:', currentState.currentFrame);
+                        }
+                        return currentState; // No state change
+                      });
+                    }).catch(error => {
+                      console.error('❌ [DEBUG] Batch 0 reload failed:', error);
+                    });
+                  }, 300);
+                } else {
+                  console.log('✅ [DEBUG] Batch reload not needed, imageData already has correct size or detection already completed');
+                  // Mark slice detection as completed even if no reload was needed
+                  if (!sliceDetectionCompleted) {
+                    setSliceDetectionCompleted(true);
+                  }
+                }
               }
             }
           }
@@ -1220,6 +1431,26 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       const endFrame = Math.min(startFrame + state.batchSize, state.totalFrames);
 
       console.log(`📦 [UnifiedViewer] Loading frames ${startFrame} to ${endFrame - 1}`);
+      // console.log(`🔍 [DEBUG] Batch calculation:`, {
+      //   batchIndex,
+      //   batchSize: state.batchSize,
+      //   totalFrames: state.totalFrames,
+      //   startFrame,
+      //   endFrame,
+      //   framesToLoad: endFrame - startFrame
+      // });
+
+      // Safety check: If totalFrames is still 1 but we're trying to load more, skip
+      if (state.totalFrames === 1 && batchIndex > 0) {
+        console.warn(`⚠️ [UnifiedViewer] Skipping batch ${batchIndex} - totalFrames still 1`);
+        return;
+      }
+
+      // If endFrame <= startFrame, no frames to load
+      if (endFrame <= startFrame) {
+        console.warn(`⚠️ [UnifiedViewer] No frames to load in batch ${batchIndex}`);
+        return;
+      }
 
       // Load frames in this batch
       const batchPromises = [];
@@ -1289,35 +1520,35 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       });
 
       // Log detailed batch results for debugging
-      console.log(`🔍 [DEBUG] Detailed batch results for batch ${batchIndex}:`);
-      batchResults.forEach((result, idx) => {
-        console.log(`  Frame ${result.frameIndex}:`, {
-          hasImageData: !!result.imageData,
-          imageDataType: typeof result.imageData,
-          imageDataLength: result.imageData?.length || 0,
-          imageDataPrefix: result.imageData?.substring(0, 50) || 'null',
-          error: result.error || 'none'
-        });
-      });
+      // console.log(`🔍 [DEBUG] Detailed batch results for batch ${batchIndex}:`);
+      // batchResults.forEach((result, idx) => {
+      //   console.log(`  Frame ${result.frameIndex}:`, {
+      //     hasImageData: !!result.imageData,
+      //     imageDataType: typeof result.imageData,
+      //     imageDataLength: result.imageData?.length || 0,
+      //     imageDataPrefix: result.imageData?.substring(0, 50) || 'null',
+      //     error: result.error || 'none'
+      //   });
+      // });
 
       // Update state with loaded images
       setState(prev => {
         const newImageData = [...prev.imageData];
         const newLoadedImages = [...prev.loadedImages];
 
-        console.log(`🔍 [DEBUG] Before state update - imageData length: ${prev.imageData.length}`);
+        // console.log(`🔍 [DEBUG] Before state update - imageData length: ${prev.imageData.length}`);
 
         batchResults.forEach(result => {
           if (result.imageData) {
             newImageData[result.frameIndex] = result.imageData;
-            console.log(`✅ [DEBUG] Added imageData for frame ${result.frameIndex}, data length: ${result.imageData.length}`);
+            // console.log(`✅ [DEBUG] Added imageData for frame ${result.frameIndex}, data length: ${result.imageData.length}`);
           } else {
             console.log(`❌ [DEBUG] No imageData for frame ${result.frameIndex}, error: ${result.error}`);
           }
         });
 
-        console.log(`🔍 [DEBUG] After processing - newImageData length: ${newImageData.length}`);
-        console.log(`🔍 [DEBUG] Frames with data:`, newImageData.map((data, idx) => ({ index: idx, hasData: !!data })).filter(f => f.hasData));
+        // console.log(`🔍 [DEBUG] After processing - newImageData length: ${newImageData.length}`);
+        // console.log(`🔍 [DEBUG] Frames with data:`, newImageData.map((data, idx) => ({ index: idx, hasData: !!data })).filter(f => f.hasData));
 
         const newState = {
           ...prev,
@@ -1327,8 +1558,8 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           isLoadingBatch: false
         };
 
-        console.log(`🔍 [DEBUG] New state imageData length: ${newState.imageData.length}`);
-        console.log(`🔍 [DEBUG] Loaded batches:`, Array.from(newState.loadedBatches));
+        // console.log(`🔍 [DEBUG] New state imageData length: ${newState.imageData.length}`);
+        // console.log(`🔍 [DEBUG] Loaded batches:`, Array.from(newState.loadedBatches));
 
         return newState;
       });
@@ -1337,10 +1568,28 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
       // Trigger displaySlice for the first frame if this is the first batch
       if (batchIndex === 0 && batchResults.some(r => r.imageData)) {
-        console.log(`🎨 [DEBUG] Triggering displaySlice for frame 0 after loading first batch`);
-        setTimeout(() => {
-          displaySlice(0);
-        }, 100);
+        console.log(`🎨 [DEBUG] First batch loaded, preparing to display frame 0`);
+        
+        // Extract imageData from batch results for immediate use
+        const batchImageData = batchResults.map(r => r.imageData).filter(Boolean);
+        console.log(`🔍 [DEBUG] Batch imageData available:`, batchImageData.length);
+        
+        // Only display frame 0 if we're still on frame 0 - don't interfere with navigation
+        setState(currentState => {
+          if (currentState.currentFrame === 0) {
+            console.log('🎯 [DEBUG] Displaying frame 0 with batch imageData');
+            setTimeout(() => displaySlice(0, batchImageData), 50);
+            
+            // Backup attempt with state data
+            setTimeout(() => {
+              console.log('🔄 [DEBUG] Backup display attempt with state data');
+              displaySlice(0);
+            }, 200);
+          } else {
+            console.log('🚫 [DEBUG] Skipping frame 0 display - navigation in progress to frame:', currentState.currentFrame);
+          }
+          return currentState; // No state change
+        });
       }
 
     } catch (error) {
@@ -1356,29 +1605,31 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   // Enhanced displaySlice function with WebGL rendering and Canvas 2D fallback
   const displaySlice = async (frameIndex: number, imageDataArray?: string[]) => {
     const startTime = performance.now();
+    console.log(`🎨 [DISPLAY] ==================== DISPLAY SLICE START ====================`);
+    console.log(`🎨 [DISPLAY] displaySlice called with frameIndex: ${frameIndex}`);
 
     try {
       const canvas = canvasRef.current;
       if (!canvas) {
-        console.error('❌ [UnifiedViewer] Canvas not available');
+        console.error('❌ [DISPLAY] Canvas not available');
         return;
       }
 
       // Use provided imageDataArray or state imageData
       const imageData = imageDataArray || state.imageData;
 
-      console.log(`🔍 [DEBUG] displaySlice called with frameIndex: ${frameIndex}`);
-      console.log(`🔍 [DEBUG] imageData array length: ${imageData.length}`);
-      console.log(`🔍 [DEBUG] imageData[${frameIndex}]:`, imageData[frameIndex]);
+      // console.log(`🔍 [DISPLAY] imageData array length: ${imageData.length}`);
+      // console.log(`🔍 [DISPLAY] imageData[${frameIndex}]:`, imageData[frameIndex] ? imageData[frameIndex].substring(0, 50) + '...' : 'null');
 
       if (!imageData[frameIndex]) {
-        console.warn(`⚠️ [UnifiedViewer] No image data for frame ${frameIndex}`);
-        console.log(`🔍 [DEBUG] Available frames in imageData:`, imageData.map((data, idx) => ({ index: idx, hasData: !!data, dataLength: data?.length || 0 })));
+        console.warn(`⚠️ [DISPLAY] ==================== NO IMAGE DATA ====================`);
+        console.warn(`⚠️ [DISPLAY] No image data for frame ${frameIndex}`);
+        // console.log(`🔍 [DISPLAY] Available frames in imageData:`, imageData.map((data, idx) => ({ index: idx, hasData: !!data, dataLength: data?.length || 0 })));
         return;
       }
 
-      console.log(`🎨 [UnifiedViewer] Displaying frame ${frameIndex} using ${state.renderingMode} rendering`);
-      console.log(`🔍 [DEBUG] Canvas dimensions: ${canvas.width}x${canvas.height}`);
+      console.log(`🎨 [DISPLAY] Displaying frame ${frameIndex} using ${state.renderingMode} rendering`);
+      // console.log(`🔍 [DISPLAY] Canvas dimensions: ${canvas.width}x${canvas.height}`);
 
       // Determine optimal LOD level based on zoom and dataset size
       let lodLevel = 4; // Default to highest quality
@@ -1387,7 +1638,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           state.zoomLevel || 1.0,
           state.totalFrames || 1
         );
-        console.log(`🎚️ [LOD] Using LOD level ${lodLevel} for frame ${frameIndex}`);
+        // console.log(`🎚️ [LOD] Using LOD level ${lodLevel} for frame ${frameIndex}`);
       }
 
       // Choose rendering method based on capabilities and preferences
@@ -1425,10 +1676,12 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
         }
 
         console.log(`✅ [UnifiedViewer] Frame ${frameIndex} rendered in ${Math.round(renderTime)}ms (LOD: ${lodLevel})`);
+        console.log(`🏁 [DISPLAY] ==================== DISPLAY SLICE SUCCESS ====================`);
       }
 
     } catch (error) {
-      console.error('❌ [UnifiedViewer] Failed to display slice:', error);
+      console.error('❌ [DISPLAY] ==================== DISPLAY SLICE ERROR ====================');
+      console.error('❌ [DISPLAY] Failed to display slice:', error);
       setState(prev => ({
         ...prev,
         error: error instanceof Error ? error.message : 'Failed to display slice'
@@ -1603,10 +1856,11 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
   const renderWithCanvas2D = async (canvas: HTMLCanvasElement, imageData: string, frameIndex: number, lodLevel: number = 4): Promise<boolean> => {
     console.log(`🎨 [Canvas2D] Starting Canvas2D rendering for frame ${frameIndex}`);
     console.log(`🎨 [Canvas2D] Image data URL length: ${imageData.length}`);
+    console.log(`🎨 [Canvas2D] Image data URL preview: ${imageData.substring(0, 100)}...`);
     console.log(`🎨 [Canvas2D] Canvas dimensions: ${canvas.width}x${canvas.height}`);
 
     try {
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) {
         console.error('❌ [Canvas2D] Failed to get 2D context');
         return false;
@@ -1616,18 +1870,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
       // Load image
       const image = new Image();
-      console.log(`🎨 [Canvas2D] Creating new Image object`);
+      console.log(`🎨 [Canvas2D] Creating new Image object for frame ${frameIndex}`);
 
       await new Promise((resolve, reject) => {
         image.onload = () => {
-          console.log(`✅ [Canvas2D] Image loaded successfully: ${image.width}x${image.height}`);
+          console.log(`✅ [Canvas2D] Image loaded successfully for frame ${frameIndex}: ${image.width}x${image.height}`);
+          // console.log(`🔍 [Canvas2D] Image naturalWidth: ${image.naturalWidth}, naturalHeight: ${image.naturalHeight}`);
           resolve(undefined);
         };
         image.onerror = (error) => {
-          console.error('❌ [Canvas2D] Image load failed:', error);
+          console.error(`❌ [Canvas2D] Image load failed for frame ${frameIndex}:`, error);
           reject(error);
         };
-        console.log(`🎨 [Canvas2D] Setting image src...`);
+        console.log(`🎨 [Canvas2D] Setting image src for frame ${frameIndex}...`);
         image.src = imageData;
       });
 
@@ -1637,6 +1892,7 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       let targetHeight = image.height;
 
       if (lodRenderingRef.current && lodLevel < 4) {
+        console.log(`🎚️ [Canvas2D] Applying LOD level ${lodLevel} for frame ${frameIndex}`);
         // Create ImageData from the image for LOD processing
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = image.width;
@@ -1668,17 +1924,19 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       }
 
       // Set canvas size based on processed image
+      const oldCanvasWidth = canvas.width;
+      const oldCanvasHeight = canvas.height;
       canvas.width = targetWidth;
       canvas.height = targetHeight;
-      console.log(`🎨 [Canvas2D] Canvas resized to: ${canvas.width}x${canvas.height}`);
+      console.log(`🎨 [Canvas2D] Canvas resized from ${oldCanvasWidth}x${oldCanvasHeight} to: ${canvas.width}x${canvas.height} for frame ${frameIndex}`);
 
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      console.log(`🎨 [Canvas2D] Canvas cleared`);
+      console.log(`🎨 [Canvas2D] Canvas cleared for frame ${frameIndex}`);
 
       // Apply transformations
       ctx.save();
-      console.log(`🎨 [Canvas2D] Applying transformations - zoom: ${state.zoom}, pan: ${state.pan.x},${state.pan.y}, rotation: ${state.rotation}`);
+      console.log(`🎨 [Canvas2D] Applying transformations for frame ${frameIndex} - zoom: ${state.zoom}, pan: ${state.pan.x},${state.pan.y}, rotation: ${state.rotation}`);
 
       // Apply zoom and pan
       const centerX = canvas.width / 2;
@@ -1695,9 +1953,23 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       ctx.imageSmoothingQuality = lodInfo?.quality === 'ultra-low' ? 'low' : 'high';
 
       // Draw processed image
-      console.log(`🎨 [Canvas2D] Drawing image to canvas...`);
+      console.log(`🎨 [Canvas2D] Drawing image to canvas for frame ${frameIndex}...`);
+      // console.log(`🔍 [Canvas2D] Drawing image with dimensions: ${processedImage.width}x${processedImage.height}`);
+      
+      // Get image data before drawing to compare
+      const beforeImageData = ctx.getImageData(0, 0, Math.min(50, canvas.width), Math.min(50, canvas.height));
+      const beforeChecksum = Array.from(beforeImageData.data.slice(0, 20)).join(',');
+      // console.log(`🔍 [Canvas2D] Canvas data before drawing frame ${frameIndex}: ${beforeChecksum}`);
+      
       ctx.drawImage(processedImage, 0, 0);
-      console.log(`✅ [Canvas2D] Image drawn successfully`);
+      
+      // Get image data after drawing to verify change
+      const afterImageData = ctx.getImageData(0, 0, Math.min(50, canvas.width), Math.min(50, canvas.height));
+      const afterChecksum = Array.from(afterImageData.data.slice(0, 20)).join(',');
+      // console.log(`🔍 [Canvas2D] Canvas data after drawing frame ${frameIndex}: ${afterChecksum}`);
+      // console.log(`🔍 [Canvas2D] Canvas data changed: ${beforeChecksum !== afterChecksum ? 'YES' : 'NO'}`);
+      
+      console.log(`✅ [Canvas2D] Image drawn successfully for frame ${frameIndex}`);
 
       // Apply windowing (simplified for Canvas 2D)
       if (state.windowWidth !== 3557 || state.windowCenter !== 40) {
@@ -1889,6 +2161,14 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
 
   // Navigation functions
   const navigateFrame = useCallback((direction: 'next' | 'previous' | 'first' | 'last' | number) => {
+    console.log(`🚀 [NAVIGATION] ==================== FRAME NAVIGATION START ====================`);
+    console.log(`🚀 [NAVIGATION] navigateFrame called with direction: ${direction}`);
+    console.log(`📊 [NAVIGATION] Current state - currentFrame: ${state.currentFrame}, totalFrames: ${state.totalFrames}`);
+    console.log(`📦 [NAVIGATION] ImageData array length: ${state.imageData.length}`);
+    console.log(`🔍 [NAVIGATION] Available frames with data:`, state.imageData.map((data, idx) => ({ idx, hasData: !!data, dataLength: data?.length || 0 })));
+    console.log(`📋 [NAVIGATION] Loaded batches:`, Array.from(state.loadedBatches));
+    console.log(`⚙️ [NAVIGATION] Batch size: ${state.batchSize}`);
+    
     let newFrame = state.currentFrame;
     let navigationDirection: 'next' | 'previous' | 'jump' = 'next';
 
@@ -1926,7 +2206,13 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       });
     }
 
+    console.log(`🎯 [NAVIGATION] Calculated newFrame: ${newFrame}`);
+    // console.log(`🔄 [NAVIGATION] Frame change check: ${state.currentFrame} -> ${newFrame} (changed: ${newFrame !== state.currentFrame})`);
+
     if (newFrame !== state.currentFrame) {
+      console.log(`🔄 [NAVIGATION] ==================== FRAME CHANGE DETECTED ====================`);
+      console.log(`🔄 [NAVIGATION] Frame change detected: ${state.currentFrame} -> ${newFrame}`);
+      
       // Check predictive cache first
       const cacheKey = `frame_${newFrame}`;
       let cachedData = null;
@@ -1938,8 +2224,12 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       if (cachedData) {
         // Use cached data
         console.log(`🎯 [PredictiveCache] Cache hit for frame ${newFrame}`);
-        setState(prev => ({ ...prev, currentFrame: newFrame }));
-        displaySlice(newFrame);
+        setState(prev => {
+          const newState = { ...prev, currentFrame: newFrame };
+          // Use setTimeout to ensure state is updated before displaySlice
+          setTimeout(() => displaySlice(newFrame), 0);
+          return newState;
+        });
 
         // Trigger predictive preloading
         if (predictiveCacheRef.current) {
@@ -1970,20 +2260,51 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
       const newBatch = Math.floor(newFrame / state.batchSize);
       const isLargeDataset = state.totalFrames > 50;
 
+      console.log(`🔍 [NAVIGATION] Navigation check:`, {
+        newFrame,
+        newBatch,
+        batchSize: state.batchSize,
+        totalFrames: state.totalFrames,
+        loadedBatches: Array.from(state.loadedBatches),
+        needsNewBatch: !state.loadedBatches.has(newBatch),
+        hasImageData: !!state.imageData[newFrame],
+        imageDataUrl: state.imageData[newFrame] ? state.imageData[newFrame].substring(0, 50) + '...' : 'null'
+      });
+
+      console.log(`📦 [NAVIGATION] Batch check: newBatch=${newBatch}, isLoaded=${state.loadedBatches.has(newBatch)}, needsLoad=${!state.loadedBatches.has(newBatch)}`);
+
       if (!state.loadedBatches.has(newBatch)) {
+        console.log(`📦 [NAVIGATION] ==================== BATCH LOADING REQUIRED ====================`);
+        console.log(`📦 [NAVIGATION] Need to load batch ${newBatch} for frame ${newFrame}`);
         // Show loading indicator for large datasets
         if (isLargeDataset) {
           setState(prev => ({ ...prev, isLoading: true }));
         }
 
         console.log(`📦 [UnifiedViewer] Need to load batch ${newBatch} for frame ${newFrame}`);
+        console.log(`📦 [NAVIGATION] Starting loadBatch(${newBatch})...`);
         loadBatch(newBatch).then(() => {
-          setState(prev => ({
-            ...prev,
-            currentFrame: newFrame,
-            isLoading: false
-          }));
-          displaySlice(newFrame);
+          console.log(`✅ [NAVIGATION] ==================== BATCH LOADED SUCCESSFULLY ====================`);
+          console.log(`✅ [NAVIGATION] Batch ${newBatch} loaded, updating frame to ${newFrame}`);
+          
+          // Use functional state update to ensure we have the latest state
+          setState(prev => {
+            const newState = {
+              ...prev,
+              currentFrame: newFrame,
+              isLoading: false
+            };
+            
+            // Use setTimeout to ensure state is updated before displaySlice
+            setTimeout(() => {
+              console.log(`🎯 [NAVIGATION] Displaying frame ${newFrame} after batch load`);
+              console.log(`🎯 [NAVIGATION] About to call displaySlice(${newFrame})`);
+              console.log(`✅ [NAVIGATION] Frame ${newFrame} data available: ${!!newState.imageData[newFrame]}`);
+              displaySlice(newFrame);
+            }, 0);
+            
+            return newState;
+          });
 
           // Trigger intelligent preloading for large datasets
           if (isLargeDataset) {
@@ -1994,15 +2315,55 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
           setState(prev => ({ ...prev, isLoading: false }));
         });
       } else {
-        setState(prev => ({ ...prev, currentFrame: newFrame }));
-        displaySlice(newFrame);
+        console.log(`✅ [NAVIGATION] ==================== BATCH ALREADY LOADED ====================`);
+        console.log(`✅ [NAVIGATION] Batch ${newBatch} already loaded, checking frame data...`);
+        // Batch is already loaded, check if frame data exists
+        if (state.imageData[newFrame]) {
+          console.log(`✅ [NAVIGATION] Frame ${newFrame} data available, displaying`);
+          console.log(`✅ [NAVIGATION] Frame ${newFrame} data URL: ${state.imageData[newFrame].substring(0, 50)}...`);
+          console.log(`🎯 [NAVIGATION] About to call displaySlice(${newFrame}) directly`);
+          
+          setState(prev => {
+            const newState = { ...prev, currentFrame: newFrame };
+            // Use setTimeout to ensure state is updated before displaySlice
+            setTimeout(() => displaySlice(newFrame), 0);
+            return newState;
+          });
+        } else {
+          console.warn(`⚠️ [NAVIGATION] ==================== FRAME DATA MISSING ====================`);
+          console.warn(`⚠️ [NAVIGATION] Frame ${newFrame} data missing despite batch ${newBatch} being loaded`);
+          console.log(`🔍 [NAVIGATION] Available frames:`, state.imageData.map((data, idx) => ({ idx, hasData: !!data })).filter(f => f.hasData));
+          
+          // Try to reload the batch
+          console.log(`🔄 [NAVIGATION] ==================== RELOADING BATCH ====================`);
+          console.log(`🔄 [NAVIGATION] Reloading batch ${newBatch} for missing frame ${newFrame}`);
+          setState(prev => ({
+            ...prev,
+            loadedBatches: new Set([...prev.loadedBatches].filter(b => b !== newBatch))
+          }));
+          
+          loadBatch(newBatch).then(() => {
+            console.log(`✅ [NAVIGATION] Batch ${newBatch} reloaded successfully`);
+            setState(prev => {
+              const newState = { ...prev, currentFrame: newFrame };
+              console.log(`✅ [NAVIGATION] Frame ${newFrame} data now available: ${!!newState.imageData[newFrame]}`);
+              // Use setTimeout to ensure state is updated before displaySlice
+              setTimeout(() => displaySlice(newFrame), 0);
+              return newState;
+            });
+          });
+        }
 
         // Still trigger preloading for smooth navigation in large datasets
         if (isLargeDataset) {
           setTimeout(() => preloadAdjacentBatches(newFrame), 200);
         }
       }
+    } else {
+      console.log(`🚫 [NAVIGATION] ==================== NO FRAME CHANGE ====================`);
+      console.log(`🚫 [NAVIGATION] No frame change needed: currentFrame=${state.currentFrame}, newFrame=${newFrame}`);
     }
+    console.log(`🏁 [NAVIGATION] ==================== FRAME NAVIGATION END ====================`);
   }, [state.currentFrame, state.totalFrames, state.imageData, state.batchSize, state.loadedBatches, loadBatch, displaySlice, preloadAdjacentBatches]);
 
   // Enhanced keyboard navigation with Apple HIG-inspired shortcuts for radiologists
@@ -2268,6 +2629,15 @@ const UnifiedDicomViewer: React.FC<UnifiedDicomViewerProps> = ({
     }
   }, [handleZoom, navigateFrame, state.totalFrames, state.currentFrame]);
 
+  // Memory monitoring useEffect
+  useEffect(() => {
+    const interval = setInterval(() => {
+      monitorMemoryUsage();
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [monitorMemoryUsage]);
+
   // Annotation event handlers
   const handleAnnotationCreate = useCallback((annotation: Omit<Annotation, 'id' | 'timestamp' | 'lastModified' | 'lastModifiedBy'>) => {
     const newAnnotation = {
@@ -2524,6 +2894,9 @@ const renderSidePanelContent = () => {
 
   return (
     <Box sx={{ p: 2, height: '100%', overflow: 'auto' }}>
+      {/* Backend API Tester - Debug */}
+      <BackendApiTester />
+      
       {/* Navigation3D Diagnostics - Minimal */}
       <Alert severity="info" sx={{ mb: 2, fontSize: '0.8rem' }}>
         <strong>🎯 3D Navigation Status:</strong> Controls are connected to main DICOM canvas.
@@ -4012,10 +4385,15 @@ const renderSidePanelContent = () => {
           onWindowing={(width, center) => setState(prev => ({ ...prev, windowWidth: width, windowCenter: center }))}
           onReset={() => setState(prev => ({ ...prev, zoom: 1, pan: { x: 0, y: 0 }, rotation: 0 }))}
           onNavigateFrame={(direction) => {
-            const newFrame = direction === 'next' ? Math.min(state.currentFrame + 1, state.totalFrames - 1) :
-              direction === 'previous' ? Math.max(state.currentFrame - 1, 0) :
-                direction === 'first' ? 0 : state.totalFrames - 1;
-            setState(prev => ({ ...prev, currentFrame: newFrame }));
+            console.log(`🎯 [DEBUG] DicomToolbar navigation: ${direction}`);
+            console.log(`🔍 [DEBUG] Current state:`, {
+              currentFrame: state.currentFrame,
+              totalFrames: state.totalFrames,
+              imageDataLength: state.imageData.length
+            });
+            
+            // Use the proper navigateFrame function with all logic
+            navigateFrame(direction);
           }}
           onToolSelect={(tool) => setState(prev => ({ ...prev, activeTool: tool }))}
           onSidebarToggle={() => {

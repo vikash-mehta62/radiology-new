@@ -225,8 +225,19 @@ router.get('/:study_uid', async (req, res) => {
           active: true 
         });
         
+        const studyObject = study.toObject();
+        
+        // Populate image_urls if not already set
+        if (!studyObject.image_urls || studyObject.image_urls.length === 0) {
+          if (studyObject.file_url) {
+            const BASE_URL = process.env.BASE_URL || 'http://localhost:8000';
+            studyObject.image_urls = [`${BASE_URL}${studyObject.file_url}`];
+            studyObject.image_urls_count = 1;
+          }
+        }
+        
         const studyWithPatient = {
-          ...study.toObject(),
+          ...studyObject,
           patient: patient ? {
             first_name: patient.first_name,
             last_name: patient.last_name,
@@ -377,6 +388,10 @@ router.post('/patients/:patient_id/upload/dicom', upload.single('file'), async (
     // Generate study UID
     const studyUID = generateStudyUID(patient_id, filename);
     
+    // Create image URLs for DICOM viewer
+    const baseUrl = process.env.BASE_URL || 'http://localhost:8000';
+    const imageUrls = [`${baseUrl}/uploads/${patient_id}/${filename}`];
+    
     // Create study record
     const study = new Study({
       study_uid: studyUID,
@@ -390,6 +405,8 @@ router.post('/patients/:patient_id/upload/dicom', upload.single('file'), async (
       original_filename: filename,
       file_size: req.file.size,
       dicom_url: `/uploads/${patient_id}/${filename}`,
+      image_urls: imageUrls,
+      image_urls_count: imageUrls.length,
       dicom_metadata: dicomInfo.info,
       processing_status: dicomInfo.success ? 'completed' : 'failed',
       has_pixel_data: dicomInfo.info.has_pixel_data || false,

@@ -148,7 +148,7 @@ const DicomToolbar: React.FC<DicomToolbarProps> = ({
               </IconButton>
             </Tooltip>
           </ButtonGroup>
-          
+
           <Chip
             label={`${currentFrame + 1} / ${Math.max(1, totalFrames)}`}
             size="small"
