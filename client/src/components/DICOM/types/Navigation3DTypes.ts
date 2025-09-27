@@ -4,6 +4,9 @@
  */
 
 export interface Navigation3DState {
+  // Core state
+  enabled: boolean;
+  
   // Rotation values (degrees: -180 to 180)
   pitch: number;
   yaw: number;
@@ -79,6 +82,9 @@ export const createCompleteNavigation3DState = (
   };
 
   return {
+    // Core state
+    enabled: Boolean(partial.enabled ?? false),
+    
     // Rotation values (degrees)
     pitch: clampValue(Number(partial.pitch ?? 0), -180, 180),
     yaw: clampValue(Number(partial.yaw ?? 0), -180, 180),

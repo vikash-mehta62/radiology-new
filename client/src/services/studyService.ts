@@ -1,5 +1,6 @@
 import { Study, Report, ApiResponse, PaginatedResponse } from '../types';
 import { apiService } from './api';
+import { environmentService } from '../config/environment';
 
 class StudyService {
   // Get all studies with optional filtering
@@ -21,18 +22,18 @@ class StudyService {
       if (params?.exam_type) queryParams.append('exam_type', params.exam_type);
       if (params?.modality) queryParams.append('modality', params.modality);
 
-      const response = await apiService.get<{ studies: Study[]; total: number }>(
-        `/studies?${queryParams.toString()}`
-      );
-
+      const url = `/api/studies${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const response = await apiService.get<{ studies: Study[]; total: number }>(url);
+      
       return response;
     } catch (error) {
-      console.error('Failed to fetch studies:', error);
+      console.error('Failed to fetch studies:', error?.message || error?.toString() || JSON.stringify(error));
       
       // Return mock data for prototype
+      const mockStudies = this.getMockStudies();
       return {
-        studies: this.getMockStudies(),
-        total: this.getMockStudies().length,
+        studies: mockStudies.slice(params?.skip || 0, (params?.skip || 0) + (params?.limit || 20)),
+        total: mockStudies.length
       };
     }
   }
@@ -40,10 +41,10 @@ class StudyService {
   // Get a specific study by UID
   async getStudy(studyUid: string): Promise<Study> {
     try {
-      const response = await apiService.get<Study>(`/studies/${studyUid}`);
+      const response = await apiService.get<Study>(`/api/studies/${studyUid}`);
       return response;
     } catch (error) {
-      console.error('Failed to fetch study:', error);
+      console.error('Failed to fetch study:', error?.message || error?.toString() || JSON.stringify(error));
       
       // Return mock data for prototype
       const mockStudies = this.getMockStudies();
@@ -61,11 +62,11 @@ class StudyService {
   async getStudyReports(studyUid: string): Promise<Report[]> {
     try {
       const response = await apiService.get<{ study_uid: string; reports: Report[] }>(
-        `/studies/${studyUid}/reports`
+        `/api/studies/${studyUid}/reports`
       );
       return response.reports;
     } catch (error) {
-      console.error('Failed to fetch study reports:', error);
+      console.error('Failed to fetch study reports:', error?.message || error?.toString() || JSON.stringify(error));
       return [];
     }
   }
@@ -78,7 +79,7 @@ class StudyService {
       );
       return response.results;
     } catch (error) {
-      console.error('Failed to search studies:', error);
+      console.error('Failed to search studies:', error?.message || error?.toString() || JSON.stringify(error));
       
       // Filter mock data for prototype
       const mockStudies = this.getMockStudies();
@@ -97,18 +98,18 @@ class StudyService {
     try {
       const response = await apiService.get<{
         patient_id: string;
-        patient_name: string;
+        patient_name?: string;
         studies: Study[];
-        total_studies: number;
-      }>(`/patients/${patientId}/studies`);
+        total: number;
+      }>(`/api/studies/patients/${patientId}/studies`);
       
       return {
         studies: response.studies,
-        total: response.total_studies,
+        total: response.total,
         patient_name: response.patient_name
       };
     } catch (error) {
-      console.error('Failed to fetch patient studies:', error);
+      console.error('Failed to fetch patient studies:', error?.message || error?.toString() || JSON.stringify(error));
       
       // Return empty studies for now
       return {
@@ -124,7 +125,7 @@ class StudyService {
       const response = await apiService.get('/studies/statistics');
       return response;
     } catch (error) {
-      console.error('Failed to fetch study statistics:', error);
+      console.error('Failed to fetch study statistics:', error?.message || error?.toString() || JSON.stringify(error));
       
       // Return mock statistics
       return {
@@ -158,7 +159,7 @@ class StudyService {
       });
       return response;
     } catch (error) {
-      console.error('Failed to start rapid workflow:', error);
+      console.error('Failed to start rapid workflow:', error?.message || error?.toString() || JSON.stringify(error));
       throw error;
     }
   }
@@ -169,7 +170,7 @@ class StudyService {
       const response = await apiService.get(`/workflow/rapid-report/status/${workflowId}`);
       return response;
     } catch (error) {
-      console.error('Failed to get workflow status:', error);
+      console.error('Failed to get workflow status:', error?.message || error?.toString() || JSON.stringify(error));
       throw error;
     }
   }
@@ -237,9 +238,9 @@ class StudyService {
         created_at: '2024-01-15T09:15:00Z',
         updated_at: '2024-01-15T09:30:00Z',
         image_urls: [
-          'wadouri:http://localhost:8042/wado?requestType=WADO&studyUID=1.2.826.0.1.3680043.8.498.32345678901234567890123456789012&seriesUID=1.2.826.0.1.3680043.8.498.32345678901234567890123456789012.1&objectUID=1.2.826.0.1.3680043.8.498.32345678901234567890123456789012.1.1&contentType=application/dicom',
+          `wadouri:${environmentService.getDicomUrl('wado')}?requestType=WADO&studyUID=1.2.826.0.1.3680043.8.498.32345678901234567890123456789012&seriesUID=1.2.826.0.1.3680043.8.498.32345678901234567890123456789012.1&objectUID=1.2.826.0.1.3680043.8.498.32345678901234567890123456789012.1.1&contentType=application/dicom`,
         ],
-        thumbnail_url: 'http://localhost:8042/instances/orthanc-instance-3/preview',
+        thumbnail_url: `${environmentService.getDicomUrl()}/instances/orthanc-instance-3/preview`,
         reports: [
           {
             report_id: 'report-3',
@@ -263,9 +264,9 @@ class StudyService {
         orthanc_id: 'orthanc-study-4',
         created_at: '2024-01-15T12:00:00Z',
         image_urls: [
-          'wadouri:http://localhost:8042/wado?requestType=WADO&studyUID=1.2.826.0.1.3680043.8.498.42345678901234567890123456789012&seriesUID=1.2.826.0.1.3680043.8.498.42345678901234567890123456789012.1&objectUID=1.2.826.0.1.3680043.8.498.42345678901234567890123456789012.1.1&contentType=application/dicom',
+          `wadouri:${environmentService.getDicomUrl('wado')}?requestType=WADO&studyUID=1.2.826.0.1.3680043.8.498.42345678901234567890123456789012&seriesUID=1.2.826.0.1.3680043.8.498.42345678901234567890123456789012.1&objectUID=1.2.826.0.1.3680043.8.498.42345678901234567890123456789012.1.1&contentType=application/dicom`,
         ],
-        thumbnail_url: 'http://localhost:8042/instances/orthanc-instance-4/preview',
+        thumbnail_url: `${environmentService.getDicomUrl()}/instances/orthanc-instance-4/preview`,
         reports: [],
       },
       {
@@ -281,9 +282,9 @@ class StudyService {
         orthanc_id: 'orthanc-study-5',
         created_at: '2024-01-15T08:45:00Z',
         image_urls: [
-          'wadouri:http://localhost:8042/wado?requestType=WADO&studyUID=1.2.826.0.1.3680043.8.498.52345678901234567890123456789012&seriesUID=1.2.826.0.1.3680043.8.498.52345678901234567890123456789012.1&objectUID=1.2.826.0.1.3680043.8.498.52345678901234567890123456789012.1.1&contentType=application/dicom',
+          `wadouri:${environmentService.getDicomUrl('wado')}?requestType=WADO&studyUID=1.2.826.0.1.3680043.8.498.52345678901234567890123456789012&seriesUID=1.2.826.0.1.3680043.8.498.52345678901234567890123456789012.1&objectUID=1.2.826.0.1.3680043.8.498.52345678901234567890123456789012.1.1&contentType=application/dicom`,
         ],
-        thumbnail_url: 'http://localhost:8042/instances/orthanc-instance-5/preview',
+        thumbnail_url: `${environmentService.getDicomUrl()}/instances/orthanc-instance-5/preview`,
         reports: [],
       },
       // Add the specific study from the error log
@@ -301,10 +302,10 @@ class StudyService {
         created_at: '2024-01-16T10:00:00Z',
         updated_at: '2024-01-16T10:05:00Z',
         image_urls: [
-          'wadouri:http://localhost:8042/wado?requestType=WADO&studyUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc&seriesUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1&objectUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1.1&contentType=application/dicom',
-          'wadouri:http://localhost:8042/wado?requestType=WADO&studyUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc&seriesUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1&objectUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1.2&contentType=application/dicom',
+          `wadouri:${environmentService.getDicomUrl('wado')}?requestType=WADO&studyUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc&seriesUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1&objectUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1.1&contentType=application/dicom`,
+          `wadouri:${environmentService.getDicomUrl('wado')}?requestType=WADO&studyUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc&seriesUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1&objectUID=aafc00c1-39ff-4db6-a4fb-636f9b9964fc.1.2&contentType=application/dicom`,
         ],
-        thumbnail_url: 'http://localhost:8042/instances/orthanc-instance-test/preview',
+        thumbnail_url: `${environmentService.getDicomUrl()}/instances/orthanc-instance-test/preview`,
         reports: [],
       },
     ];

@@ -110,7 +110,7 @@ export function useUnifiedState(
 
         const handleError = (error: Error) => {
           setError(error.message);
-          console.error('🔴 [useUnifiedState] State manager error:', error);
+          console.error('🔴 [useUnifiedState] State manager error:', error?.message || error?.toString() || JSON.stringify(error));
         };
 
         const handleInitialized = (state: GlobalState) => {

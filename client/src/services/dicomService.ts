@@ -1,9 +1,12 @@
-import * as cornerstone from 'cornerstone-core';
-import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
-import * as cornerstoneWebImageLoader from 'cornerstone-web-image-loader';
-import * as dicomParser from 'dicom-parser';
+import { RenderingEngine, Enums, imageLoader, metaData, init as csRenderingInit } from '@cornerstonejs/core';
+import { init as csToolsInit, ToolGroupManager, Enums as csToolsEnums } from '@cornerstonejs/tools';
+import dicomImageLoader from '@cornerstonejs/dicom-image-loader';
 import { apiService } from './api';
 import { DicomError, DicomLoadingState, RetryConfig } from '../types';
+import { webGPUEnhancedService } from './webGPUEnhancedService';
+import { itkWasmService } from './itkWasmService';
+import { ohifIntegrationService } from './ohifIntegrationService';
+import { environmentService } from '../config/environment';
 
 // Enhanced interfaces for progressive loading
 interface LoadingProgress {
@@ -54,156 +57,60 @@ class DicomService {
   private errorCallbacks = new Set<(error: DicomError) => void>();
   private recoveryCallbacks = new Set<(imageId: string) => void>();
 
-  async initialize() {
-    if (this.initialized) return;
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      console.log('🔄 [DicomService] Already initialized');
+      return;
+    }
 
     try {
-      // Initialize cornerstone
-      cornerstone.enable(document.createElement('div'));
+      console.log('🚀 [DicomService] Initializing Cornerstone3D...');
+      
+      // Initialize Cornerstone3D core and tools
+      await csRenderingInit();
+      await csToolsInit();
 
-      // Register WADO Image Loader
-      if (typeof cornerstoneWADOImageLoader.external === 'function') {
-        cornerstoneWADOImageLoader.external({
-          cornerstone,
-          dicomParser
-        });
-      }
+      // Initialize DICOM image loader with configuration
+      dicomImageLoader.init({
+        maxWebWorkers: Math.max(1, Math.floor(navigator.hardwareConcurrency / 2)),
+      });
 
-      // Register Web Image Loader
-      if (typeof cornerstoneWebImageLoader.external === 'function') {
-        cornerstoneWebImageLoader.external({
-          cornerstone
-        });
-      }
-
-
-
-      // Fast startup configuration - disable web workers initially
-      const config = {
-        maxWebWorkers: 0, // Disable web workers for faster startup
-        startWebWorkersOnDemand: false,
-        webWorkerPath: '/cornerstoneWADOImageLoaderWebWorker.js',
-        taskConfiguration: {
-          decodeTask: {
-            initializeCodecsOnStartup: false,
-            usePDFJS: false,
-            strict: false,
-          },
-        },
-        useWebWorkers: false, // Disable for immediate startup
-        webWorkerTaskPaths: [],
-        maxWebWorkerTasks: 0,
-        // Add proper XMLHttpRequest configuration
-        beforeSend: function (xhr: XMLHttpRequest) {
-          // Set proper headers for DICOM files
-          xhr.setRequestHeader('Accept', 'application/dicom, */*');
-          xhr.setRequestHeader('Cache-Control', 'no-cache');
-          // Set timeout to prevent hanging requests
-          xhr.timeout = 30000; // 30 seconds
-          // Enable credentials for CORS if needed
-          xhr.withCredentials = false;
-        },
-        // Add error handling for XMLHttpRequest
-        errorInterceptor: function (error: any) {
-          console.group('🔴 DICOM Loading Error Intercepted');
-          console.error('Error object:', error);
-          
-          // Log XMLHttpRequest specific details
-          if (error && error.request) {
-            const xhr = error.request;
-            console.log('XMLHttpRequest Details:');
-            console.log('- Status:', xhr.status);
-            console.log('- Status Text:', xhr.statusText);
-            console.log('- Ready State:', xhr.readyState);
-            console.log('- Response URL:', xhr.responseURL);
-            console.log('- Response Type:', xhr.responseType);
-            console.log('- Timeout:', xhr.timeout);
-            console.log('- With Credentials:', xhr.withCredentials);
-            
-            // Log response headers if available
-            try {
-              const responseHeaders = xhr.getAllResponseHeaders();
-              console.log('- Response Headers:', responseHeaders);
-            } catch (e) {
-              console.log('- Response Headers: Unable to retrieve');
-            }
-            
-            // Log response text/data if available
-            try {
-              if (xhr.responseText) {
-                console.log('- Response Text (first 200 chars):', xhr.responseText.substring(0, 200));
-              }
-            } catch (e) {
-              console.log('- Response Text: Unable to retrieve');
-            }
-          }
-          
-          // Log error properties
-          if (error) {
-            console.log('Error Properties:');
-            console.log('- Message:', error.message);
-            console.log('- Name:', error.name);
-            console.log('- Stack:', error.stack);
-            console.log('- Type:', typeof error);
-            
-            // Log all enumerable properties
-            const errorProps = Object.getOwnPropertyNames(error);
-            console.log('- All Properties:', errorProps);
-            errorProps.forEach(prop => {
-              try {
-                console.log(`  - ${prop}:`, error[prop]);
-              } catch (e) {
-                console.log(`  - ${prop}: Unable to access`);
-              }
-            });
-          }
-          
-          console.groupEnd();
-          return error;
-        }
-      };
-
-      cornerstoneWADOImageLoader.configure(config);
-
-      // Enable web workers after a delay to not block initialization
-      setTimeout(() => {
-        try {
-          const enhancedConfig = {
-            ...config,
-            maxWebWorkers: Math.min(navigator.hardwareConcurrency || 2, 2),
-            useWebWorkers: true,
-            maxWebWorkerTasks: 20,
-            // Ensure XMLHttpRequest configuration is preserved
-            beforeSend: function (xhr: XMLHttpRequest) {
-              // Set proper headers for DICOM files
-              xhr.setRequestHeader('Accept', 'application/dicom, */*');
-              xhr.setRequestHeader('Cache-Control', 'no-cache');
-              // Set timeout to prevent hanging requests
-              xhr.timeout = 30000; // 30 seconds
-              // Enable credentials for CORS if needed
-              xhr.withCredentials = false;
-            },
-            // Add error handling for XMLHttpRequest
-            errorInterceptor: function (error: any) {
-              console.error('DICOM loading error intercepted:', error);
-              return error;
-            }
-          };
-          cornerstoneWADOImageLoader.configure(enhancedConfig);
-          this.initializePreloadWorkers();
-        } catch (error) {
-          console.warn('Failed to enable web workers:', error);
-        }
-      }, 2000);
-
-      // Set up cache cleanup interval
-      setInterval(() => this.cleanupCache(), 60000);
+      // Initialize enhanced services
+      await this.initializeEnhancedServices();
 
       this.initialized = true;
+      console.log('✅ [DicomService] Cornerstone3D initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize DICOM service:', error);
-      // Still mark as initialized to prevent infinite retry loops
-      this.initialized = true;
+      console.error('❌ [DicomService] Failed to initialize:', error);
+      throw error;
+    }
+  }
+
+  private async initializeEnhancedServices(): Promise<void> {
+    try {
+      // Initialize WebGPU enhanced service
+      const webGPUSupported = await webGPUEnhancedService.initialize();
+      if (webGPUSupported) {
+        console.log('✅ WebGPU enhanced rendering enabled');
+      }
+
+      // Initialize ITK-WASM service
+      const itkInitialized = await itkWasmService.initialize();
+      if (itkInitialized) {
+        console.log('✅ ITK-WASM advanced processing enabled');
+      }
+
+      // Initialize OHIF integration
+      const ohifInitialized = await ohifIntegrationService.initialize({
+        maxNumberOfWebWorkers: Math.max(1, Math.floor(navigator.hardwareConcurrency / 2)),
+        showCPUFallbackMessage: !webGPUSupported
+      });
+      if (ohifInitialized) {
+        console.log('✅ OHIF integration enabled');
+      }
+
+    } catch (error) {
+      console.warn('Some enhanced services failed to initialize:', error);
     }
   }
 
@@ -356,7 +263,7 @@ class DicomService {
       });
 
       console.log(`🔄 [DicomService] Loading image with ${timeoutMs/1000}s timeout:`, imageId);
-      const loadPromise = cornerstone.loadImage(imageId);
+      const loadPromise = imageLoader.loadImage(imageId);
       const image = await Promise.race([loadPromise, timeoutPromise]);
       console.log('✅ [DicomService] Image loaded successfully:', imageId);
       
@@ -365,7 +272,7 @@ class DicomService {
     } catch (error) {
       console.group('🔴 [DicomService] Error in performSingleImageLoad');
       console.error('Image ID:', imageId);
-      console.error('Error object:', error);
+      console.error('Error object:', error?.message || error?.toString() || JSON.stringify(error));
       console.error('Error type:', typeof error);
       console.error('Error name:', (error as any)?.name);
       console.error('Error message:', (error as any)?.message);
@@ -953,34 +860,41 @@ class DicomService {
   }
 
   // Enhanced display with progressive enhancement
-  async displayImage(element: HTMLElement, imageId: string, options: LoadingOptions = {}): Promise<void> {
+  async displayImage(element: HTMLDivElement, imageId: string, options: LoadingOptions = {}): Promise<void> {
     if (!this.initialized) {
       await this.initialize();
     }
 
     try {
-      // Ensure the element is enabled for cornerstone
-      if (!cornerstone.getEnabledElement(element)) {
-        cornerstone.enable(element);
-        // Wait a brief moment for the element to be fully enabled
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-
-      // Verify the element is properly enabled before proceeding
-      const enabledElement = cornerstone.getEnabledElement(element);
-      if (!enabledElement) {
-        throw new Error('Failed to enable cornerstone element');
+      const renderingEngine = this.getRenderingEngine();
+      const viewportId = element.id || 'viewport';
+      
+      // Create viewport if it doesn't exist
+      let viewport = renderingEngine.getViewport(viewportId);
+      if (!viewport) {
+        renderingEngine.enableElement({
+          viewportId,
+          element,
+          type: Enums.ViewportType.STACK,
+        });
+        viewport = renderingEngine.getViewport(viewportId);
       }
 
       // Show loading placeholder if progressive loading is enabled
       if (options.progressive) {
         const placeholder = this.createLoadingPlaceholder();
-        cornerstone.displayImage(element, placeholder);
+        if (viewport && 'setStack' in viewport) {
+          (viewport as any).setStack([placeholder]);
+          viewport.render();
+        }
       }
 
       // Load and display the image
       const image = await this.loadImage(imageId, options);
-      cornerstone.displayImage(element, image);
+      if (viewport && 'setStack' in viewport) {
+        (viewport as any).setStack([image]);
+        viewport.render();
+      }
 
       // Preload adjacent images for smooth navigation
       if (options.preload !== false) {
@@ -1074,7 +988,7 @@ class DicomService {
 
   getImageIds(studyUid: string): string[] {
     // Use actual working DICOM files from the Node.js backend
-    const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const backendUrl = environmentService.getApiUrl();
     
     // Return actual DICOM files that exist in the backend
     const imageIds = [
@@ -1090,7 +1004,7 @@ class DicomService {
 
   async getStudyMetadata(studyUid: string): Promise<any> {
     try {
-      const orthancUrl = process.env.REACT_APP_ORTHANC_URL || 'http://localhost:8042';
+      const orthancUrl = environmentService.get('orthancUrl');
       
       const response = await fetch(`${orthancUrl}/studies/${studyUid}`);
       
@@ -1119,7 +1033,7 @@ class DicomService {
 
   async getSeriesMetadata(seriesId: string): Promise<any> {
     try {
-      const orthancUrl = process.env.REACT_APP_ORTHANC_URL || 'http://localhost:8042';
+      const orthancUrl = environmentService.get('orthancUrl');
       
       const response = await fetch(`${orthancUrl}/series/${seriesId}`);
       
@@ -1146,7 +1060,7 @@ class DicomService {
     }
   }
 
-  async enableElement(element: HTMLElement): Promise<void> {
+  async enableElement(element: HTMLDivElement): Promise<void> {
     try {
       // Ensure DicomService is initialized
       if (!this.initialized) {
@@ -1176,53 +1090,41 @@ class DicomService {
         offsetHeight: element.offsetHeight
       });
 
+      const renderingEngine = this.getRenderingEngine();
+      const viewportId = element.id || 'viewport';
+      
       // Check if already enabled
       try {
-        const existingEnabledElement = cornerstone.getEnabledElement(element);
-        if (existingEnabledElement) {
+        const existingViewport = renderingEngine.getViewport(viewportId);
+        if (existingViewport) {
           console.log('ℹ️ [DicomService] Element already enabled');
           return;
         }
       } catch (getError) {
-        // Element is not enabled, which is expected
+        // Viewport is not enabled, which is expected
         console.log('📝 [DicomService] Element not yet enabled (expected)');
       }
 
-      // Enable the element
+      // Enable the element with Cornerstone3D
       console.log('⚡ [DicomService] Enabling cornerstone element...');
-      cornerstone.enable(element);
+      renderingEngine.enableElement({
+        viewportId,
+        element,
+        type: Enums.ViewportType.STACK,
+      });
       
       // Wait for enablement to complete
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Verify enablement with multiple attempts
-      let enabledElement = null;
-      let attempts = 0;
-      const maxAttempts = 5;
-      
-      while (!enabledElement && attempts < maxAttempts) {
-        attempts++;
-        try {
-          enabledElement = cornerstone.getEnabledElement(element);
-          if (enabledElement) {
-            break;
-          }
-        } catch (verifyError) {
-          console.warn(`🔄 [DicomService] Verification attempt ${attempts} failed:`, verifyError);
-        }
-        
-        if (attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-      }
-      
-      if (!enabledElement) {
-        throw new Error(`Failed to enable cornerstone element after ${maxAttempts} attempts. Element may not be properly initialized or cornerstone library may not be loaded correctly.`);
+      // Verify enablement
+      const viewport = renderingEngine.getViewport(viewportId);
+      if (!viewport) {
+        throw new Error('Failed to enable cornerstone element. Viewport was not created.');
       }
       
       console.log('✅ [DicomService] Element enabled successfully', {
-        canvas: !!enabledElement.canvas,
-        viewport: !!enabledElement.viewport
+        viewportId,
+        viewportType: viewport.type
       });
       
     } catch (error) {
@@ -1240,52 +1142,91 @@ class DicomService {
     }
   }
 
-  disableElement(element: HTMLElement): void {
+  disableElement(element: HTMLDivElement): void {
     try {
-      cornerstone.disable(element);
+      // In Cornerstone3D, we need to destroy the viewport instead of disabling the element
+      const renderingEngine = this.getRenderingEngine();
+      if (renderingEngine) {
+        const viewportId = element.id || 'viewport';
+        try {
+          renderingEngine.disableElement(viewportId);
+        } catch (error) {
+          console.warn('Viewport was not enabled:', error);
+        }
+      }
     } catch (error) {
       console.warn('Element was not enabled:', error);
     }
   }
 
-  setViewport(element: HTMLElement, viewport: any): void {
-    cornerstone.setViewport(element, viewport);
+  private getRenderingEngine() {
+    // Get or create a rendering engine instance
+    try {
+      // Simply create a new rendering engine with a unique ID
+      return new RenderingEngine('dicomService');
+    } catch (error) {
+      console.error('Failed to create rendering engine:', error);
+      throw error;
+    }
   }
 
-  getViewport(element: HTMLElement): any {
-    return cornerstone.getViewport(element);
+  setViewport(element: HTMLDivElement, viewport: any): void {
+    const renderingEngine = this.getRenderingEngine();
+    const viewportId = element.id || 'viewport';
+    const viewportInstance = renderingEngine.getViewport(viewportId);
+    if (viewportInstance && 'setProperties' in viewportInstance) {
+      (viewportInstance as any).setProperties(viewport);
+      viewportInstance.render();
+    }
   }
 
-  rotate(element: HTMLElement, degrees: number): void {
-    const viewport = cornerstone.getViewport(element);
-    viewport.rotation = (viewport.rotation || 0) + degrees;
-    cornerstone.setViewport(element, viewport);
+  getViewport(element: HTMLDivElement): any {
+    const renderingEngine = this.getRenderingEngine();
+    const viewportId = element.id || 'viewport';
+    const viewport = renderingEngine.getViewport(viewportId);
+    return viewport ? viewport.getProperties() : null;
   }
 
-  invert(element: HTMLElement): void {
-    const viewport = cornerstone.getViewport(element);
-    viewport.invert = !viewport.invert;
-    cornerstone.setViewport(element, viewport);
+  rotate(element: HTMLDivElement, degrees: number): void {
+    const renderingEngine = this.getRenderingEngine();
+    const viewportId = element.id || 'viewport';
+    const viewport = renderingEngine.getViewport(viewportId);
+    if (viewport && 'setProperties' in viewport) {
+      const currentProps = viewport.getProperties() as any;
+      const newRotation = (currentProps.rotation || 0) + degrees;
+      (viewport as any).setProperties({ ...currentProps, rotation: newRotation });
+      viewport.render();
+    }
   }
 
-  reset(element: HTMLElement): void {
-    cornerstone.reset(element);
+  invert(element: HTMLDivElement): void {
+    const renderingEngine = this.getRenderingEngine();
+    const viewportId = element.id || 'viewport';
+    const viewport = renderingEngine.getViewport(viewportId);
+    if (viewport && 'setProperties' in viewport) {
+      const currentProps = viewport.getProperties() as any;
+      (viewport as any).setProperties({ ...currentProps, invert: !currentProps.invert });
+      viewport.render();
+    }
   }
 
-  fitToWindow(element: HTMLElement): void {
-    const enabledElement = cornerstone.getEnabledElement(element);
-    if (enabledElement && enabledElement.image) {
-      const viewport = cornerstone.getViewport(element);
-      const canvas = enabledElement.canvas;
-      
-      const scaleX = canvas.width / enabledElement.image.width;
-      const scaleY = canvas.height / enabledElement.image.height;
-      const scale = Math.min(scaleX, scaleY);
-      
-      viewport.scale = scale;
-      viewport.translation = { x: 0, y: 0 };
-      
-      cornerstone.setViewport(element, viewport);
+  reset(element: HTMLDivElement): void {
+    const renderingEngine = this.getRenderingEngine();
+    const viewportId = element.id || 'viewport';
+    const viewport = renderingEngine.getViewport(viewportId);
+    if (viewport && 'resetProperties' in viewport) {
+      (viewport as any).resetProperties();
+      viewport.render();
+    }
+  }
+
+  fitToWindow(element: HTMLDivElement): void {
+    const renderingEngine = this.getRenderingEngine();
+    const viewportId = element.id || 'viewport';
+    const viewport = renderingEngine.getViewport(viewportId);
+    if (viewport) {
+      viewport.resetCamera();
+      viewport.render();
     }
   }
 
@@ -1319,32 +1260,39 @@ class DicomService {
     return presets[modality] || presets.CT;
   }
 
-  addMeasurement(element: HTMLElement, startPoint: { x: number; y: number }, endPoint: { x: number; y: number }): number {
+  addMeasurement(element: HTMLDivElement, startPoint: { x: number; y: number }, endPoint: { x: number; y: number }): number {
     const dx = endPoint.x - startPoint.x;
     const dy = endPoint.y - startPoint.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    const pixelDistance = Math.sqrt(dx * dx + dy * dy);
 
-    const enabledElement = cornerstone.getEnabledElement(element);
-    const image = enabledElement.image;
+    // Get real distance using Cornerstone3D APIs
+    const renderingEngine = this.getRenderingEngine();
+    const viewportId = element.id || 'viewport';
+    const viewport = renderingEngine.getViewport(viewportId);
     
-    if (image && image.rowPixelSpacing && image.columnPixelSpacing) {
-      const realDistance = distance * ((image.rowPixelSpacing + image.columnPixelSpacing) / 2);
-      return realDistance / 10;
+    if (viewport && 'getImageData' in viewport) {
+      const imageData = (viewport as any).getImageData();
+      if (imageData && imageData.spacing) {
+        const [spacingX, spacingY] = imageData.spacing;
+        const realDistance = pixelDistance * Math.sqrt(spacingX * spacingX + spacingY * spacingY);
+        return realDistance;
+      }
     }
 
-    return distance;
+    // Fallback to pixel distance if spacing is not available
+    return pixelDistance;
   }
 
   generateSampleImageId(studyUid: string, seriesNumber: number = 1, instanceNumber: number = 1): string {
     // Use the 0002.DCM file as dummy DICOM file
-    const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const backendUrl = environmentService.getApiUrl();
     
     return `wadouri:${backendUrl}/dicom/0002.DCM`;
   }
 
   generatePatientImageId(patientId: string, studyUid: string): string {
     // Generate patient-specific DICOM image URL
-    const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const backendUrl = environmentService.getApiUrl();
     
     // Use the correct DICOM file serving endpoint that returns raw DICOM content
     return `wadouri:${backendUrl}/uploads/${patientId}/MRBRAIN.DCM`;

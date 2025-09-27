@@ -117,9 +117,9 @@ const MPRViewer: React.FC<MPRViewerProps> = ({
   settings,
   onSettingsChange
 }) => {
-  const axialRef = useRef<HTMLCanvasElement>(null);
-  const sagittalRef = useRef<HTMLCanvasElement>(null);
-  const coronalRef = useRef<HTMLCanvasElement>(null);
+  const axialRef = useRef<HTMLDivElement>(null);
+  const sagittalRef = useRef<HTMLDivElement>(null);
+  const coronalRef = useRef<HTMLDivElement>(null);
   
   const [planes, setPlanes] = useState<MPRPlanes>({
     axial: true,
@@ -273,7 +273,7 @@ const MPRViewer: React.FC<MPRViewerProps> = ({
                 <Typography variant="subtitle1" gutterBottom>
                   Axial View
                 </Typography>
-                <canvas
+                <div
                   ref={axialRef}
                   style={{
                     width: '100%',
@@ -294,7 +294,7 @@ const MPRViewer: React.FC<MPRViewerProps> = ({
                 <Typography variant="subtitle1" gutterBottom>
                   Sagittal View
                 </Typography>
-                <canvas
+                <div
                   ref={sagittalRef}
                   style={{
                     width: '100%',
@@ -315,7 +315,7 @@ const MPRViewer: React.FC<MPRViewerProps> = ({
                 <Typography variant="subtitle1" gutterBottom>
                   Coronal View
                 </Typography>
-                <canvas
+                <div
                   ref={coronalRef}
                   style={{
                     width: '100%',

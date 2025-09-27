@@ -505,4 +505,24 @@ export class PredictiveCacheService {
   dispose(): void {
     this.clear();
   }
+
+  /**
+   * Cleanup method for memory pressure situations
+   */
+  cleanup(): void {
+    this.cleanupExpiredItems();
+    // Force cleanup of half the cache during memory pressure
+    const itemsToRemove = Math.floor(this.cache.size / 2);
+    const keysToRemove = Array.from(this.cache.keys()).slice(0, itemsToRemove);
+    
+    for (const key of keysToRemove) {
+      const item = this.cache.get(key);
+      if (item) {
+        this.cache.delete(key);
+        this.currentCacheSize -= item.size;
+      }
+    }
+    
+    this.updateStats();
+  }
 }

@@ -521,6 +521,243 @@ export class DicomSecurityValidator {
   }
 
   /**
+   * Validate the environment for DICOM processing
+   * Checks browser capabilities, security settings, and system requirements
+   */
+  async validateEnvironment(): Promise<boolean> {
+    try {
+      console.log('🔒 [DicomSecurityValidator] Validating environment...');
+      
+      // Check browser capabilities
+      const browserChecks = this.validateBrowserCapabilities();
+      
+      // Check security settings
+      const securityChecks = this.validateSecuritySettings();
+      
+      // Check memory availability
+      const memoryChecks = this.validateMemoryAvailability();
+      
+      // Check WebGL/WebGPU support for rendering
+      const renderingChecks = await this.validateRenderingCapabilities();
+      
+      const allChecks = [
+        ...browserChecks,
+        ...securityChecks,
+        ...memoryChecks,
+        ...renderingChecks
+      ];
+      
+      const failedChecks = allChecks.filter(check => !check.passed);
+      
+      if (failedChecks.length > 0) {
+        console.warn('⚠️ [DicomSecurityValidator] Environment validation warnings:', 
+          failedChecks.map(check => check.message));
+        
+        // Log failed checks but don't block initialization
+        await this.createSecurityAudit(
+          0,
+          {
+            isValid: false,
+            errors: failedChecks.map(check => check.message),
+            warnings: [],
+            securityIssues: failedChecks.filter(check => check.critical).map(check => check.message),
+            metadata: {}
+          },
+          0,
+          'environment-validation'
+        );
+        
+        // Only fail if there are critical issues
+        const criticalFailures = failedChecks.filter(check => check.critical);
+        if (criticalFailures.length > 0) {
+          console.error('❌ [DicomSecurityValidator] Critical environment validation failures:', 
+            criticalFailures.map(check => check.message));
+          return false;
+        }
+      }
+      
+      console.log('✅ [DicomSecurityValidator] Environment validation passed');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ [DicomSecurityValidator] Environment validation failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Validate browser capabilities
+   */
+  private validateBrowserCapabilities(): Array<{passed: boolean, message: string, critical: boolean}> {
+    const checks = [];
+    
+    // Check for required APIs
+    checks.push({
+      passed: typeof ArrayBuffer !== 'undefined',
+      message: 'ArrayBuffer support required for DICOM processing',
+      critical: true
+    });
+    
+    checks.push({
+      passed: typeof Uint8Array !== 'undefined',
+      message: 'Uint8Array support required for binary data handling',
+      critical: true
+    });
+    
+    checks.push({
+      passed: typeof Worker !== 'undefined',
+      message: 'Web Workers support recommended for background processing',
+      critical: false
+    });
+    
+    checks.push({
+      passed: typeof WebAssembly !== 'undefined',
+      message: 'WebAssembly support recommended for performance',
+      critical: false
+    });
+    
+    // Check Canvas support
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      checks.push({
+        passed: !!ctx,
+        message: 'Canvas 2D context required for image rendering',
+        critical: true
+      });
+    } catch (error) {
+      checks.push({
+        passed: false,
+        message: 'Canvas support check failed',
+        critical: true
+      });
+    }
+    
+    return checks;
+  }
+
+  /**
+   * Validate security settings
+   */
+  private validateSecuritySettings(): Array<{passed: boolean, message: string, critical: boolean}> {
+    const checks = [];
+    
+    // Check HTTPS in production
+    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+    checks.push({
+      passed: isSecure,
+      message: 'HTTPS required for secure DICOM data transmission',
+      critical: false // Not critical for development
+    });
+    
+    // Check for Content Security Policy
+    const hasCsp = document.querySelector('meta[http-equiv="Content-Security-Policy"]') !== null;
+    checks.push({
+      passed: hasCsp,
+      message: 'Content Security Policy recommended for enhanced security',
+      critical: false
+    });
+    
+    return checks;
+  }
+
+  /**
+   * Validate memory availability
+   */
+  private validateMemoryAvailability(): Array<{passed: boolean, message: string, critical: boolean}> {
+    const checks = [];
+    
+    try {
+      // Check available memory using performance.memory if available
+      if ('memory' in performance) {
+        const memory = (performance as any).memory;
+        const availableMemory = memory.jsHeapSizeLimit - memory.usedJSHeapSize;
+        const minRequiredMemory = 128 * 1024 * 1024; // 128MB
+        
+        checks.push({
+          passed: availableMemory > minRequiredMemory,
+          message: `Insufficient memory available: ${Math.round(availableMemory / 1024 / 1024)}MB available, ${Math.round(minRequiredMemory / 1024 / 1024)}MB required`,
+          critical: false
+        });
+      } else {
+        // Fallback memory check
+        checks.push({
+          passed: true,
+          message: 'Memory information not available, assuming sufficient',
+          critical: false
+        });
+      }
+    } catch (error) {
+      checks.push({
+        passed: true,
+        message: 'Memory check failed, assuming sufficient',
+        critical: false
+      });
+    }
+    
+    return checks;
+  }
+
+  /**
+   * Validate rendering capabilities
+   */
+  private async validateRenderingCapabilities(): Promise<Array<{passed: boolean, message: string, critical: boolean}>> {
+    const checks = [];
+    
+    try {
+      // Check WebGL support
+      const canvas = document.createElement('canvas');
+      const webglContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      checks.push({
+        passed: !!webglContext,
+        message: 'WebGL support required for advanced rendering',
+        critical: false
+      });
+      
+      // Check WebGL2 support
+      const webgl2Context = canvas.getContext('webgl2');
+      checks.push({
+        passed: !!webgl2Context,
+        message: 'WebGL2 support recommended for enhanced rendering',
+        critical: false
+      });
+      
+      // Check WebGPU support (if available)
+      if ('gpu' in navigator) {
+        try {
+          const adapter = await (navigator as any).gpu.requestAdapter();
+          checks.push({
+            passed: !!adapter,
+            message: 'WebGPU support available for advanced rendering',
+            critical: false
+          });
+        } catch (error) {
+          checks.push({
+            passed: false,
+            message: 'WebGPU not available',
+            critical: false
+          });
+        }
+      } else {
+        checks.push({
+          passed: false,
+          message: 'WebGPU not supported in this browser',
+          critical: false
+        });
+      }
+      
+    } catch (error) {
+      checks.push({
+        passed: false,
+        message: 'Rendering capabilities check failed',
+        critical: false
+      });
+    }
+    
+    return checks;
+  }
+
+  /**
    * Get security audit log
    */
   getSecurityAuditLog(): DicomSecurityAudit[] {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, startTransition } from 'react';
 import {
   Snackbar,
   Alert,
@@ -41,7 +41,9 @@ interface Notification {
 }
 
 export function NotificationSystem() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  // Initialize state with lazy initialization for React 19
+  const [notifications, setNotifications] = useState<Notification[]>(() => []);
+  
   const { 
     onSystemNotification, 
     onStudyProcessing, 
@@ -52,7 +54,29 @@ export function NotificationSystem() {
     isConnected 
   } = useWebSocket();
 
-  // Handle system notifications
+  // Memoize notification handlers for React 19 performance
+  const addNotification = useCallback((notification: Notification) => {
+    startTransition(() => {
+      setNotifications(prev => [...prev, notification]);
+    });
+  }, []);
+
+  const updateNotification = useCallback((notification: Notification) => {
+    startTransition(() => {
+      setNotifications(prev => {
+        const filtered = prev.filter(n => n.id !== notification.id);
+        return [...filtered, notification];
+      });
+    });
+  }, []);
+
+  const removeNotification = useCallback((id: string) => {
+    startTransition(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    });
+  }, []);
+
+  // Handle system notifications - React 19 optimized
   useEffect(() => {
     const unsubscribe = onSystemNotification((message: SystemNotificationMessage) => {
       const notification: Notification = {
@@ -67,13 +91,13 @@ export function NotificationSystem() {
         timestamp: Date.now(),
       };
       
-      setNotifications(prev => [...prev, notification]);
+      addNotification(notification);
     });
 
     return unsubscribe;
-  }, [onSystemNotification]);
+  }, [onSystemNotification, addNotification]);
 
-  // Handle study processing updates
+  // Handle study processing updates - React 19 optimized
   useEffect(() => {
     const unsubscribe = onStudyProcessing((message: StudyProcessingMessage) => {
       const notification: Notification = {
@@ -91,16 +115,13 @@ export function NotificationSystem() {
         timestamp: Date.now(),
       };
       
-      setNotifications(prev => {
-        const filtered = prev.filter(n => n.id !== notification.id);
-        return [...filtered, notification];
-      });
+      updateNotification(notification);
     });
 
     return unsubscribe;
-  }, [onStudyProcessing]);
+  }, [onStudyProcessing, updateNotification]);
 
-  // Handle image loading updates
+  // Handle image loading updates - React 19 optimized
   useEffect(() => {
     const unsubscribe = onImageLoading((message: ImageLoadingMessage) => {
       if (message.progress < 100) {
@@ -115,20 +136,17 @@ export function NotificationSystem() {
           timestamp: Date.now(),
         };
         
-        setNotifications(prev => {
-          const filtered = prev.filter(n => n.id !== notification.id);
-          return [...filtered, notification];
-        });
+        updateNotification(notification);
       } else {
         // Remove loading notification when complete
-        setNotifications(prev => prev.filter(n => n.id !== `image-${message.study_uid}`));
+        removeNotification(`image-${message.study_uid}`);
       }
     });
 
     return unsubscribe;
-  }, [onImageLoading]);
+  }, [onImageLoading, updateNotification, removeNotification]);
 
-  // Handle AI processing updates
+  // Handle AI processing updates - React 19 optimized
   useEffect(() => {
     const unsubscribe = onAIProcessing((message: AIProcessingMessage) => {
       const notification: Notification = {
@@ -148,16 +166,13 @@ export function NotificationSystem() {
         timestamp: Date.now(),
       };
       
-      setNotifications(prev => {
-        const filtered = prev.filter(n => n.id !== notification.id);
-        return [...filtered, notification];
-      });
+      updateNotification(notification);
     });
 
     return unsubscribe;
-  }, [onAIProcessing]);
+  }, [onAIProcessing, updateNotification]);
 
-  // Handle workflow updates
+  // Handle workflow updates - React 19 optimized
   useEffect(() => {
     const unsubscribe = onWorkflowUpdate((message: WorkflowUpdateMessage) => {
       const notification: Notification = {
@@ -176,35 +191,36 @@ export function NotificationSystem() {
         timestamp: Date.now(),
       };
       
-      setNotifications(prev => {
-        const filtered = prev.filter(n => n.id !== notification.id);
-        return [...filtered, notification];
-      });
+      updateNotification(notification);
     });
 
     return unsubscribe;
-  }, [onWorkflowUpdate]);
+  }, [onWorkflowUpdate, updateNotification]);
 
-  // Auto-dismiss notifications
+  // Auto-dismiss notifications - React 19 optimized
   useEffect(() => {
     const interval = setInterval(() => {
-      setNotifications(prev => 
-        prev.filter(notification => {
-          if (!notification.autoDismiss) return true;
-          const age = Date.now() - notification.timestamp;
-          return age < (notification.dismissAfter || 5000);
-        })
-      );
+      startTransition(() => {
+        setNotifications(prev => 
+          prev.filter(notification => {
+            if (!notification.autoDismiss) return true;
+            const age = Date.now() - notification.timestamp;
+            return age < (notification.dismissAfter || 5000);
+          })
+        );
+      });
     }, 1000);
 
     return () => clearInterval(interval);
   }, []);
 
-  const dismissNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
+  // Memoize dismiss handler for React 19 performance
+  const dismissNotification = useCallback((id: string) => {
+    removeNotification(id);
+  }, [removeNotification]);
 
-  const getNotificationIcon = (type: string) => {
+  // Memoize notification icon getter for React 19 performance
+  const getNotificationIcon = useCallback((type: string) => {
     switch (type) {
       case 'study': return <SyncIcon />;
       case 'ai': return <AIIcon />;
@@ -212,7 +228,85 @@ export function NotificationSystem() {
       case 'workflow': return <ReportIcon />;
       default: return null;
     }
-  };
+  }, []);
+
+  // Memoize connection alerts for React 19 performance
+  const connectionAlerts = useMemo(() => {
+    const alerts = [];
+    
+    if (!isConnected) {
+      alerts.push(
+        <Alert key="disconnected" severity="warning" sx={{ mb: 1 }}>
+          <AlertTitle>Connection Lost</AlertTitle>
+          Real-time updates unavailable
+        </Alert>
+      );
+    }
+    
+    if (isConnected && connectionQuality === 'poor') {
+      alerts.push(
+        <Alert key="poor-connection" severity="info" sx={{ mb: 1 }}>
+          <AlertTitle>Poor Connection</AlertTitle>
+          Real-time updates may be delayed
+        </Alert>
+      );
+    }
+    
+    return alerts;
+  }, [isConnected, connectionQuality]);
+
+  // Memoize notification items for React 19 performance
+  const notificationItems = useMemo(() => {
+    return notifications.map((notification) => (
+      <Slide
+        key={notification.id}
+        direction="left"
+        in={true}
+        mountOnEnter
+        unmountOnExit
+      >
+        <Alert
+          severity={notification.level}
+          action={
+            <IconButton
+              size="small"
+              onClick={() => dismissNotification(notification.id)}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          }
+          icon={getNotificationIcon(notification.type)}
+          sx={{ width: '100%' }}
+        >
+          <AlertTitle>{notification.title}</AlertTitle>
+          <Typography variant="body2">
+            {notification.message}
+          </Typography>
+          
+          {notification.progress !== undefined && (
+            <Box sx={{ mt: 1 }}>
+              <LinearProgress 
+                variant="determinate" 
+                value={notification.progress} 
+                sx={{ mb: 0.5 }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                {Math.round(notification.progress)}% complete
+              </Typography>
+            </Box>
+          )}
+          
+          {notification.type && (
+            <Chip
+              label={notification.type.toUpperCase()}
+              size="small"
+              sx={{ mt: 0.5 }}
+            />
+          )}
+        </Alert>
+      </Slide>
+    ));
+  }, [notifications, dismissNotification, getNotificationIcon]);
 
   return (
     <Box
@@ -226,72 +320,14 @@ export function NotificationSystem() {
       }}
     >
       {/* Connection Status */}
-      {!isConnected && (
-        <Alert severity="warning" sx={{ mb: 1 }}>
-          <AlertTitle>Connection Lost</AlertTitle>
-          Real-time updates unavailable
-        </Alert>
-      )}
-      
-      {isConnected && connectionQuality === 'poor' && (
-        <Alert severity="info" sx={{ mb: 1 }}>
-          <AlertTitle>Poor Connection</AlertTitle>
-          Real-time updates may be delayed
-        </Alert>
-      )}
+      {connectionAlerts}
 
       {/* Notifications Stack */}
       <Stack spacing={1}>
-        {notifications.map((notification) => (
-          <Slide
-            key={notification.id}
-            direction="left"
-            in={true}
-            mountOnEnter
-            unmountOnExit
-          >
-            <Alert
-              severity={notification.level}
-              action={
-                <IconButton
-                  size="small"
-                  onClick={() => dismissNotification(notification.id)}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              }
-              icon={getNotificationIcon(notification.type)}
-              sx={{ width: '100%' }}
-            >
-              <AlertTitle>{notification.title}</AlertTitle>
-              <Typography variant="body2">
-                {notification.message}
-              </Typography>
-              
-              {notification.progress !== undefined && (
-                <Box sx={{ mt: 1 }}>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={notification.progress} 
-                    sx={{ mb: 0.5 }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    {Math.round(notification.progress)}% complete
-                  </Typography>
-                </Box>
-              )}
-              
-              {notification.type && (
-                <Chip
-                  label={notification.type.toUpperCase()}
-                  size="small"
-                  sx={{ mt: 0.5 }}
-                />
-              )}
-            </Alert>
-          </Slide>
-        ))}
+        {notificationItems}
       </Stack>
     </Box>
   );
 }
+
+export default React.memo(NotificationSystem);

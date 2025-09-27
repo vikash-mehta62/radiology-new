@@ -4,6 +4,9 @@
  */
 
 import { DicomError, RetryConfig, LoadingAttempt } from '../types';
+import { ViewerError } from '../components/DICOM/types/ViewerTypes';
+
+export { ViewerError };
 
 export enum ErrorType {
   NETWORK_ERROR = 'network',
@@ -17,7 +20,9 @@ export enum ErrorType {
   TIMEOUT_ERROR = 'timeout',
   NOT_FOUND_ERROR = 'not_found',
   CORRUPTED_DATA_ERROR = 'corrupted',
-  BROWSER_COMPATIBILITY_ERROR = 'browser_compatibility'
+  BROWSER_COMPATIBILITY_ERROR = 'browser_compatibility',
+  INITIALIZATION_ERROR = 'initialization',
+  SECURITY_ERROR = 'security'
 }
 
 export enum ErrorSeverity {
@@ -25,19 +30,6 @@ export enum ErrorSeverity {
   MEDIUM = 'medium',
   HIGH = 'high',
   CRITICAL = 'critical'
-}
-
-export interface ViewerError extends Error {
-  type: ErrorType;
-  code: string;
-  severity: ErrorSeverity;
-  retryable: boolean;
-  timestamp: number;
-  context?: Record<string, any>;
-  originalError?: Error;
-  requestId?: string;
-  studyUid?: string;
-  imageId?: string;
 }
 
 export interface RecoveryAction {
@@ -179,24 +171,38 @@ export class ErrorHandler {
     const type = this.classifyError(error);
     const severity = this.determineSeverity(type, error);
     const retryable = this.isRetryable(type, error);
-    
-    const viewerError: ViewerError = {
-      name: 'ViewerError',
-      message: this.getUserFriendlyMessage(type, error.message),
-      type,
-      code: this.generateErrorCode(type),
-      severity,
-      retryable,
-      timestamp: Date.now(),
-      context: {
-        ...context,
-        sessionId: this.sessionId,
-        userAgent: navigator.userAgent,
-        timestamp: Date.now()
-      },
-      originalError: error,
-      stack: error.stack
-    };
+    const code = this.generateErrorCode(type);
+
+    // Properly serialize error message to avoid [object Object] display
+    let errorMessage = '';
+    if (error && typeof error === 'object') {
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.toString && typeof error.toString === 'function') {
+        const stringified = error.toString();
+        errorMessage = stringified !== '[object Object]' ? stringified : JSON.stringify(error);
+      } else {
+        errorMessage = JSON.stringify(error);
+      }
+    } else {
+      errorMessage = String(error);
+    }
+
+    const viewerError = new ViewerError(
+      this.getUserFriendlyMessage(type, errorMessage),
+      code,
+      severity
+    );
+
+    // Add additional properties
+    (viewerError as any).type = type;
+    (viewerError as any).retryable = retryable;
+    (viewerError as any).timestamp = Date.now();
+    (viewerError as any).context = context;
+    (viewerError as any).originalError = error;
+    (viewerError as any).requestId = context?.sessionId || this.sessionId;
+    (viewerError as any).studyUid = context?.studyUid;
+    (viewerError as any).imageId = context?.imageId;
 
     return viewerError;
   }
@@ -633,6 +639,9 @@ export class ErrorHandler {
   private setupGlobalErrorHandlers(): void {
     // Handle unhandled promise rejections
     window.addEventListener('unhandledrejection', (event) => {
+      // Prevent the default browser error display
+      event.preventDefault();
+      
       const error = this.createViewerError(event.reason, {
         timestamp: Date.now()
       });
@@ -641,6 +650,9 @@ export class ErrorHandler {
 
     // Handle global errors
     window.addEventListener('error', (event) => {
+      // Prevent the default browser error display
+      event.preventDefault();
+      
       const error = this.createViewerError(event.error || new Error(event.message), {
         timestamp: Date.now()
       });

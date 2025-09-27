@@ -4,6 +4,7 @@ import { Box, CssBaseline, Fab, Tooltip } from '@mui/material';
 import { Keyboard as KeyboardIcon } from '@mui/icons-material';
 
 import Layout from './components/Layout/Layout';
+import StudyRedirect from './components/StudyRedirect';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { useAuth } from './hooks/useAuth';
 import LoadingScreen from './components/Common/LoadingScreen';
@@ -34,6 +35,9 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DebugReports = lazy(() => import('./pages/DebugReports'));
 const Reports = lazy(() => import('./pages/Reports'));
 const DeviceDiscovery = lazy(() => import('./pages/DeviceDiscovery'));
+const EnhancedViewerTestPage = lazy(() => import('./pages/EnhancedViewerTestPage'));
+const UnifiedViewerTest = lazy(() => import('./components/DICOM/UnifiedViewerTest'));
+const FinalDicomViewerDemo = lazy(() => import('./pages/FinalDicomViewerDemo'));
 
 // Theme is now handled by ThemeProvider context
 
@@ -188,6 +192,18 @@ function App() {
                     }
                   />
                   
+                  {/* Redirect old /study/ URLs to /studies/ */}
+                  <Route
+                    path="/study/:studyUid"
+                    element={
+                      shouldAuthenticate ? (
+                        <StudyRedirect />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    }
+                  />
+                  
                   <Route
                     path="/reports/:reportId"
                     element={
@@ -255,6 +271,42 @@ function App() {
                   />
                   
                   <Route path="/workflow-test" element={<WorkflowTestPage />} />
+                  
+                  {/* Enhanced DICOM Viewer Test Route - Phase 1 */}
+                  <Route 
+                    path="/enhanced-viewer-test" 
+                    element={
+                      shouldAuthenticate ? (
+                        <EnhancedViewerTestPage />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    } 
+                  />
+                  
+                  {/* Unified DICOM Viewer Test Route - Complete Implementation */}
+                  <Route 
+                    path="/unified-viewer-test" 
+                    element={
+                      shouldAuthenticate ? (
+                        <UnifiedViewerTest />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    } 
+                  />
+                  
+                  {/* Final DICOM Viewer Demo - GPU Accelerated with Latest Driver Support */}
+                  <Route 
+                    path="/final-dicom-viewer" 
+                    element={
+                      shouldAuthenticate ? (
+                        <FinalDicomViewerDemo />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    } 
+                  />
                   
                   {/* Quarantined routes - DicomTest moved to quarantine */}
                   {/* <Route path="/test" element={<DicomTest />} /> */}

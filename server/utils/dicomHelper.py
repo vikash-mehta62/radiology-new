@@ -309,8 +309,8 @@ def convert_to_image(pixel_array, output_format='PNG'):
             else:
                 pixel_array = pixel_array.astype(np.uint8)
         
-        # Create PIL Image
-        image = Image.fromarray(pixel_array, mode='L')  # Grayscale
+        # Create PIL Image (Pillow automatically detects grayscale mode for 2D arrays)
+        image = Image.fromarray(pixel_array)
         
         # Convert to base64
         buffer = io.BytesIO()

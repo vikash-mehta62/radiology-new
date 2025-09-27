@@ -5,7 +5,7 @@
 
 import * as cornerstone from 'cornerstone-core';
 import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
-import * as cornerstoneWebImageLoader from 'cornerstone-web-image-loader';
+// import * as cornerstoneWebImageLoader from 'cornerstone-web-image-loader';
 import * as dicomParser from 'dicom-parser';
 import { apiService } from './api';
 import { errorHandler, ErrorType, ViewerError } from './errorHandler';
@@ -13,6 +13,20 @@ import { performanceMonitor } from './performanceMonitor';
 import { DicomError, DicomLoadingState, RetryConfig, Study } from '../types';
 import { dicomSecurityValidator, DicomValidationResult } from './dicomSecurityValidator';
 import { dicomSecurityAudit } from './dicomSecurityAudit';
+import { environmentService } from '../config/environment';
+
+
+
+
+interface NormalizedImage {
+  imageId: string;
+  cornerstoneImage?: any;
+  htmlImage?: HTMLImageElement;
+  canvas?: HTMLCanvasElement;
+  meta?: Record<string, any>;
+}
+
+
 
 interface LoadingProgress {
   loaded: number;
@@ -132,113 +146,210 @@ class EnhancedDicomService {
   /**
    * Load a DICOM image with comprehensive error handling and multiple fallback strategies
    */
-  async loadImage(
-    imageId: string, 
-    options: LoadingOptions = {}
-  ): Promise<any> {
-    const {
-      priority = 'medium',
-      timeout = 30000,
-      retryConfig = {}
-    } = options;
+// add at top of file (if not already present)
+// npm install dicom-parser
 
-    const startTime = performance.now();
-    console.log(`🔄 [EnhancedDicomService] Loading image: ${imageId}`);
+async loadImage(
+  imageId: string,
+  options: LoadingOptions = {}
+): Promise<any> {
+  const {
+    priority = 'medium',
+    timeout = 30000,
+    retryConfig = {}
+  } = options;
 
-    // Ensure service is initialized
-    if (!this.initialized) {
-      await this.initialize();
-    }
+  const startTime = performance.now();
+  console.log(`[SERRVICELOAD ] 🔄 loadImage start: ${imageId}`, { priority });
 
-    // Check if already loading
-    if (this.loadingQueue.has(imageId)) {
-      console.log(`⏳ [EnhancedDicomService] Image already loading: ${imageId}`);
-      return this.loadingQueue.get(imageId);
-    }
+  // Ensure service is initialized
+  if (!this.initialized) {
+    console.log('[SERRVICELOAD ] initializing service as it was not initialized');
+    await this.initialize();
+  }
 
-    // Check cache first
-    const cached = this.getCachedImage(imageId);
-    if (cached) {
-      console.log(`✅ [EnhancedDicomService] Cache hit: ${imageId}`);
-      this.updateCacheAccess(imageId);
-      
-      // Record cache hit performance
-      const loadTime = performance.now() - startTime;
-      performanceMonitor.recordImageLoadTime(loadTime);
-      
-      return cached.image;
-    }
+  // If already loading, reuse
+  if (this.loadingQueue.has(imageId)) {
+    console.log(`[SERRVICELOAD ] ⏳ Image already loading (reuse promise): ${imageId}`);
+    return this.loadingQueue.get(imageId);
+  }
 
-    // Check circuit breaker
-    if (this.isCircuitBreakerOpen(imageId)) {
-      const error = new Error('Circuit breaker is open for this image');
-      throw await errorHandler.handleError(error, { 
-        imageId, 
-        viewerMode: 'circuit_breaker' 
-      });
-    }
+  // Cache check
+  const cached = this.getCachedImage(imageId);
+  if (cached) {
+    console.log(`[SERRVICELOAD ] ✅ Cache hit: ${imageId}`);
+    this.updateCacheAccess(imageId);
+    const loadTime = performance.now() - startTime;
+    performanceMonitor.recordImageLoadTime(loadTime);
+    return cached.image;
+  }
 
-    // Create loading promise with comprehensive error handling
-    const loadingPromise = this.createLoadingPromise(imageId, options);
-    this.loadingQueue.set(imageId, loadingPromise);
+  // Circuit breaker
+  if (this.isCircuitBreakerOpen(imageId)) {
+    const err = new Error('Circuit breaker is open for this image');
+    console.warn('[SERRVICELOAD ] circuit breaker open for', imageId);
+    throw await errorHandler.handleError(err, { imageId, viewerMode: 'circuit_breaker' });
+  }
 
+  // Create loading promise
+  const loadingPromise = this.createLoadingPromise(imageId, options);
+  this.loadingQueue.set(imageId, loadingPromise);
+
+  try {
+    const result = await loadingPromise;
+    this.loadingQueue.delete(imageId);
+
+    const loadTime = performance.now() - startTime;
+    performanceMonitor.recordImageLoadTime(loadTime);
+    console.log(`[SERRVICELOAD ] ✅ Successfully loaded: ${imageId} in ${loadTime.toFixed(2)}ms`);
+    return result;
+  } catch (originalError) {
+    this.loadingQueue.delete(imageId);
+
+    const loadTime = performance.now() - startTime;
+    performanceMonitor.recordImageLoadTime(loadTime);
+
+    // Log original failure
+    console.error(`[SERRVICELOAD ] ❌ Primary loader failed for ${imageId} after ${loadTime.toFixed(2)}ms`, normalizeError(originalError).message || originalError);
+
+    // --- Diagnostic fallback: fetch raw bytes and inspect DICOM tags ---
     try {
-      const result = await loadingPromise;
-      this.loadingQueue.delete(imageId);
-      
-      // Record successful load performance
-      const loadTime = performance.now() - startTime;
-      performanceMonitor.recordImageLoadTime(loadTime);
-      
-      console.log(`✅ [EnhancedDicomService] Successfully loaded: ${imageId} in ${loadTime.toFixed(2)}ms`);
-      return result;
-    } catch (error) {
-      this.loadingQueue.delete(imageId);
-      
-      // Record failed load performance
-      const loadTime = performance.now() - startTime;
-      performanceMonitor.recordImageLoadTime(loadTime);
-      
-      console.error(`❌ [EnhancedDicomService] Failed to load: ${imageId} after ${loadTime.toFixed(2)}ms`, error);
-      throw error;
+      console.log('[SERRVICELOAD ] diagnostic fallback starting for', imageId);
+
+      const rawUrl = (typeof imageId === 'string' && imageId.startsWith('wadouri:')) ? imageId.replace(/^wadouri:/, '') : imageId;
+      console.log('[SERRVICELOAD ] diagnostic raw url:', rawUrl);
+
+      const resp = await fetch(rawUrl, { method: 'GET', cache: 'no-cache' });
+      console.log('[SERRVICELOAD ] diagnostic fetch status:', resp.status, 'for', rawUrl);
+
+      if (!resp.ok) {
+        const msg = `Raw fetch failed with status ${resp.status} ${resp.statusText}`;
+        console.warn('[SERRVICELOAD ]', msg);
+        // Attach diagnostic info and rethrow ViewerError
+        const viewerErr = new ViewerError(msg, 'IMAGE_LOAD_ERROR', 'high');
+        (viewerErr as any).diagnostic = { fetchStatus: resp.status, fetchStatusText: resp.statusText };
+        throw viewerErr;
+      }
+
+      const contentType = resp.headers.get('content-type') || '';
+      const arrayBuffer = await resp.arrayBuffer();
+      const byteLength = arrayBuffer.byteLength;
+      console.log('[SERRVICELOAD ] diagnostic fetched bytes:', byteLength, 'content-type:', contentType);
+
+      // Try parsing with dicom-parser to extract tags
+      let parsedMeta: Record<string, any> = {};
+      try {
+        const byteArray = new Uint8Array(arrayBuffer);
+        const dataSet = dicomParser.parseDicom(byteArray);
+
+        // Common tags (best-effort)
+        parsedMeta.TransferSyntaxUID = dataSet.string('x00020010') || dataSet.string('x00020012') || dataSet.string('x00020002') || undefined;
+        parsedMeta.Rows = dataSet.uint16('x00280010');
+        parsedMeta.Columns = dataSet.uint16('x00280011');
+        parsedMeta.BitsAllocated = dataSet.uint16('x00280100');
+        parsedMeta.SamplesPerPixel = dataSet.uint16('x00280002');
+        parsedMeta.PhotometricInterpretation = dataSet.string('x00280004');
+        parsedMeta.PixelRepresentation = dataSet.uint16('x00280103');
+        parsedMeta.PixelDataPresent = !!dataSet.elements.x7fe00010;
+        parsedMeta.byteLength = byteLength;
+
+        console.log('[SERRVICELOAD ] dicom-parser metadata:', parsedMeta);
+      } catch (parseErr) {
+        console.warn('[SERRVICELOAD ] dicom-parser failed to parse metadata:', normalizeError(parseErr).message || parseErr);
+        parsedMeta.parseError = normalizeError(parseErr).message || String(parseErr);
+      }
+
+      // Decide based on Transfer Syntax UID / content-type
+      const ts = parsedMeta.TransferSyntaxUID || null;
+      if (ts) {
+        console.warn('[SERRVICELOAD ] Detected TransferSyntaxUID:', ts);
+        const friendlyMsg = `Unsupported or compressed Transfer Syntax detected (${ts}). Client cannot decode this format in-browser.`;
+        const viewerErr = new ViewerError(friendlyMsg, 'UNSUPPORTED_TRANSFER_SYNTAX', 'high');
+        (viewerErr as any).diagnostic = { ...parsedMeta, contentType };
+        throw viewerErr;
+      }
+
+      // If pixel data present but no TSUID, likely uncompressed DICOM but loader still failed
+      if (parsedMeta.PixelDataPresent) {
+        const msg = 'PixelData present but client decoder failed — possible decoding bug or unsupported compression.';
+        const viewerErr = new ViewerError(msg, 'PIXEL_DECODE_FAILED', 'high');
+        (viewerErr as any).diagnostic = { ...parsedMeta, contentType };
+        throw viewerErr;
+      }
+
+      // If nothing helpful, return a generic diagnostic failure
+      const finalMsg = 'Raw fetch succeeded but no usable DICOM image could be decoded by client.';
+      const viewerErr = new ViewerError(finalMsg, 'RAW_FETCH_NO_IMAGE', 'high');
+      (viewerErr as any).diagnostic = { contentType, byteLength: byteLength, parsedMeta };
+      throw viewerErr;
+
+    } catch (diagnosticError) {
+      // Final: log and throw ViewerError with diagnostic attached
+      const norm = normalizeError(diagnosticError);
+      console.error('[SERRVICELOAD ] diagnostic fallback produced error for', imageId, norm.message);
+
+      // If diagnosticError is already a ViewerError, rethrow it
+      if ((diagnosticError as any)?.isViewerError || (diagnosticError as any)?.code) {
+        throw diagnosticError;
+      }
+
+      // Wrap into ViewerError
+      const viewerErr = new ViewerError(norm.message || 'Image load failed', 'IMAGE_LOAD_ERROR', 'high');
+      (viewerErr as any).diagnostic = (diagnosticError as any)?.meta || null;
+      throw viewerErr;
+    } finally {
+      const dur = performance.now() - startTime;
+      console.log(`[SERRVICELOAD ] loadImage finished for ${imageId} (durationMs: ${dur.toFixed(2)})`);
     }
   }
+}
+
 
   /**
    * Load DICOM image with multiple fallback strategies
    */
-  async loadImageWithFallbacks(
-    imageId: string,
-    options: LoadingOptions = {}
-  ): Promise<any> {
-    const strategies = this.getLoadingStrategies(imageId);
-    
-    for (let i = 0; i < strategies.length; i++) {
-      const strategy = strategies[i];
-      
-      try {
-        console.log(`🔄 [EnhancedDicomService] Trying strategy ${i + 1}/${strategies.length}: ${strategy.name}`);
-        const result = await strategy.load(imageId, options);
-        
-        if (result) {
-          console.log(`✅ [EnhancedDicomService] Strategy ${strategy.name} succeeded for: ${imageId}`);
-          return result;
-        }
-      } catch (error) {
-        console.warn(`⚠️ [EnhancedDicomService] Strategy ${strategy.name} failed for ${imageId}:`, error);
-        
-        // If this is the last strategy, handle the error
-        if (i === strategies.length - 1) {
-          throw await errorHandler.handleError(error as Error, {
+async loadImageWithFallbacks(imageId: string, options: LoadingOptions = {}): Promise<NormalizedImage> {
+  const strategies = this.getLoadingStrategies(imageId);
+  for (let i = 0; i < strategies.length; i++) {
+    const strategy = strategies[i];
+    try {
+      console.log(`[SERRVICELOAD ] Trying strategy ${i + 1}/${strategies.length}: ${strategy.name} for ${imageId}`);
+      const result = await strategy.load(imageId, options);
+      if (result) {
+        // Ensure result is normalized
+        if ((result as NormalizedImage).imageId) {
+          console.log(`[SERRVICELOAD ] Strategy ${strategy.name} succeeded for ${imageId}`, {
             imageId,
-            viewerMode: 'fallback_strategies_exhausted'
+            hasCornerstoneImage: !!(result as NormalizedImage).cornerstoneImage,
+            hasCanvas: !!(result as NormalizedImage).canvas,
+            hasHtmlImage: !!(result as NormalizedImage).htmlImage
           });
+          return result as NormalizedImage;
+        } else {
+          // If legacy cornerstone image returned directly, wrap it
+          console.log(`[SERRVICELOAD ] Strategy ${strategy.name} returned legacy shape; wrapping now`);
+          const wrapped: NormalizedImage = {
+            imageId,
+            cornerstoneImage: (result as any),
+            meta: {
+              rows: (result as any)?.rows,
+              columns: (result as any)?.columns
+            }
+          };
+          return wrapped;
         }
       }
+    } catch (err) {
+      console.warn(`[SERRVICELOAD ] Strategy ${strategy.name} failed for ${imageId}:`, err);
+      if (i === strategies.length - 1) {
+        // Last strategy: escalate via errorHandler
+        throw await errorHandler.handleError(err as Error, { imageId, viewerMode: 'fallback_strategies_exhausted' });
+      }
     }
-
-    throw new Error('All loading strategies failed');
   }
+  throw new Error('All loading strategies failed');
+}
+
 
   /**
    * Load multiple images with intelligent batching and error handling
@@ -288,105 +399,185 @@ class EnhancedDicomService {
   /**
    * Load a complete study with progress tracking and error recovery
    */
-  async loadStudy(
-    study: Study, 
-    onProgress?: (progress: LoadingProgress) => void
-  ): Promise<{ images: any[]; errors: ViewerError[] }> {
-    const studyUid = study.study_uid;
-    const startTime = performance.now();
-    
-    // Initialize study loading state
-    const studyState: StudyLoadingState = {
-      studyUid,
-      totalImages: study.image_urls?.length || 0,
-      loadedImages: 0,
-      failedImages: 0,
-      isLoading: true,
-      startTime: Date.now(),
-      errors: []
-    };
-    
-    this.studyLoadingStates.set(studyUid, studyState);
+// enhancedDicomService.ts - instrumented loadStudy with [SERRVICELOAD ] logs
+async loadStudy(
+  study: Study,
+  onProgress?: (progress: LoadingProgress) => void,
+  options?: { enableProgressiveLoading?: boolean; maxMemoryUsage?: number; enableCompression?: boolean; qualityLevel?: string }
+): Promise<
+  { success: true; images: any[]; errors: ViewerError[]; message?: string } |
+  { success: false; message: string; recoveryOptions?: any[] }
+> {
+  const studyUid = study?.study_uid ?? '(no-uid)';
+  const startTime = performance.now();
+  console.log('[SERRVICELOAD ] starting loadStudy for', studyUid, { shortStudy: { patient_id: study?.patient_id, study_uid: studyUid } });
 
-    try {
-      const imageIds = this.extractImageIds(study);
-      
-      if (imageIds.length === 0) {
-        throw await errorHandler.handleError(
-          new Error('No valid image URLs found in study'),
-          { studyUid, viewerMode: 'study_loading' }
-        );
+  const studyState: StudyLoadingState = {
+    studyUid,
+    totalImages: study.image_urls?.length || 0,
+    loadedImages: 0,
+    failedImages: 0,
+    isLoading: true,
+    startTime: Date.now(),
+    errors: []
+  };
+  this.studyLoadingStates.set(studyUid, studyState);
+
+  try {
+    const imageIds = this.extractImageIds(study) || [];
+    console.log('[SERRVICELOAD ] extracted imageIds count:', imageIds.length, 'imageIds:', imageIds.slice(0, 10));
+
+    if (imageIds.length === 0) {
+      console.warn('[SERRVICELOAD ] no imageIds found for', studyUid);
+      const recovery = await errorHandler.handleError(new Error('No valid image URLs found in study'), { studyUid, viewerMode: 'study_loading' });
+      console.log('[SERRVICELOAD ] recovery result for no-imageIds:', recovery);
+      if (recovery.success) {
+        return { success: false, message: 'No valid image URLs found after recovery', recoveryOptions: this.getRecoveryOptionsForNoImages() };
+      } else {
+        return { success: false, message: recovery.message || 'No valid image URLs found', recoveryOptions: this.getRecoveryOptionsForNoImages() };
       }
+    }
 
-      const images: any[] = [];
-      const errors: ViewerError[] = [];
+    const images: any[] = [];
+    const errors: ViewerError[] = [];
 
-      // Load images with progress tracking
-      for (let i = 0; i < imageIds.length; i++) {
-        const imageId = imageIds[i];
-        
-        try {
-          const image = await this.loadImage(imageId, {
-            priority: i < 3 ? 'high' : 'medium' // Prioritize first few images
-          });
-          
-          images.push(image);
-          studyState.loadedImages++;
-          
-          // Update progress
-          const progress: LoadingProgress = {
-            loaded: studyState.loadedImages,
-            total: studyState.totalImages,
-            percentage: (studyState.loadedImages / studyState.totalImages) * 100,
-            currentImage: imageId,
-            estimatedTimeRemaining: this.calculateEstimatedTime(studyState)
-          };
-          
-          if (onProgress) {
-            onProgress(progress);
-          }
+    for (let i = 0; i < imageIds.length; i++) {
+      const imageId = imageIds[i];
+      console.log('[SERRVICELOAD ] loading image', i + 1, '/', imageIds.length, '->', imageId);
+      try {
+        const image = await this.loadImage(imageId, { priority: i < 3 ? 'high' : 'medium' });
+        console.log('[SERRVICELOAD ] loaded image success:', imageId);
+        images.push(image);
+        studyState.loadedImages++;
 
-        } catch (error) {
-          const viewerError = error as ViewerError;
-          errors.push(viewerError);
-          studyState.failedImages++;
-          studyState.errors.push(viewerError);
-          
-          // Continue loading other images unless it's a critical error
-          if (viewerError.severity === 'critical') {
-            break;
+        const progress: LoadingProgress = {
+          loaded: studyState.loadedImages,
+          total: studyState.totalImages || imageIds.length,
+          percentage: studyState.totalImages ? (studyState.loadedImages / studyState.totalImages) * 100 : Math.round((studyState.loadedImages / (i + 1)) * 100),
+          currentImage: imageId,
+          estimatedTimeRemaining: this.calculateEstimatedTime(studyState)
+        };
+
+        if (onProgress) {
+          try { onProgress(progress); } catch (cbErr) { console.warn('[SERRVICELOAD ] onProgress threw', cbErr); }
+        }
+      } catch (err) {
+        const viewerError: ViewerError = (err && (err as ViewerError).message) ? (err as ViewerError) : new ViewerError(String(err || 'Unknown image load error'), 'IMAGE_LOAD_ERROR', 'high');
+        console.warn('[SERRVICELOAD ] image load failed:', imageId, viewerError.message);
+        errors.push(viewerError);
+        studyState.failedImages++;
+        studyState.errors.push(viewerError);
+
+        if (viewerError.severity === 'critical') {
+          console.log('[SERRVICELOAD ] critical error detected, attempting recovery for imageId:', imageId);
+          const recovery = await errorHandler.handleError(viewerError, { studyUid, imageId });
+          console.log('[SERRVICELOAD ] recovery result for imageId:', imageId, recovery);
+          if (!recovery.success) {
+            console.error('[SERRVICELOAD ] recovery failed for critical image:', imageId, recovery);
+            // continue to allow other images to try
+          } else {
+            console.info('[SERRVICELOAD ] recovery succeeded for critical image:', imageId, recovery);
           }
         }
       }
-
-      studyState.isLoading = false;
-      
-      // Record study load performance
-      const totalTime = performance.now() - startTime;
-      performanceMonitor.recordStudyLoadTime(totalTime);
-      
-      console.log(`📊 [EnhancedDicomService] Study loaded: ${images.length}/${imageIds.length} images in ${totalTime.toFixed(2)}ms`);
-      
-      // If no images loaded successfully, throw an error
-      if (images.length === 0) {
-        throw await errorHandler.handleError(
-          new Error('Failed to load any images from the study'),
-          { studyUid }
-        );
-      }
-
-      return { images, errors };
-
-    } catch (error) {
-      studyState.isLoading = false;
-      
-      // Record failed study load
-      const totalTime = performance.now() - startTime;
-      performanceMonitor.recordStudyLoadTime(totalTime);
-      
-      throw error;
     }
+
+    studyState.isLoading = false;
+    const totalTime = performance.now() - startTime;
+    performanceMonitor.recordStudyLoadTime(totalTime);
+    console.log(`[SERRVICELOAD ] Study load summary for ${studyUid}: loaded=${images.length}, failed=${studyState.failedImages}, timeMs=${totalTime.toFixed(2)}`);
+
+    if (images.length > 0) {
+      console.log('[SERRVICELOAD ] returning success with images for', studyUid);
+      return { success: true, images, errors, message: 'Study loaded' };
+    }
+
+    // Fallback attempts
+    console.warn('[SERRVICELOAD ] no images loaded; attempting fallbacks for', studyUid);
+
+    // 1) try alternative parser if available
+    if (typeof (this as any).tryAlternativeParser === 'function') {
+      try {
+        console.log('[SERRVICELOAD ] trying alternative parser for', studyUid);
+        const altOk = await (this as any).tryAlternativeParser(study, onProgress, options);
+        console.log('[SERRVICELOAD ] alternative parser result:', !!altOk && (altOk.images?.length || 0));
+        if (altOk?.images && altOk.images.length > 0) {
+          console.log('[SERRVICELOAD ] alternative parser succeeded for', studyUid);
+          return { success: true, images: altOk.images, errors: altOk.errors || [], message: 'Study loaded using alternative parser' };
+        }
+      } catch (altErr) {
+        console.warn('[SERRVICELOAD ] alternative parser threw for', studyUid, altErr);
+      }
+    } else {
+      console.log('[SERRVICELOAD ] no alternative parser available');
+    }
+
+    // 2) raw fetch first URL
+    const firstUrl = (study.image_urls && study.image_urls[0]) || null;
+    if (firstUrl) {
+      console.log('[SERRVICELOAD ] attempting raw fetch fallback for', firstUrl);
+      try {
+        const resp = await fetch(firstUrl, { method: 'GET', cache: 'no-cache' });
+        console.log('[SERRVICELOAD ] raw fetch status for', firstUrl, resp.status);
+        if (resp.ok) {
+          const contentType = resp.headers.get('content-type') || '';
+          console.log('[SERRVICELOAD ] raw fetch content-type:', contentType);
+          const blob = await resp.blob();
+          if (contentType.startsWith('image/')) {
+            const url = URL.createObjectURL(blob);
+            const fallbackImage = { imageId: `fallback:${studyUid}`, src: url, meta: { contentType } };
+            console.log('[SERRVICELOAD ] raw fetch produced fallback image for', studyUid);
+            return { success: true, images: [fallbackImage], errors, message: 'Loaded fallback image from raw fetch' };
+          } else {
+            console.warn('[SERRVICELOAD ] raw fetch unsupported content-type', contentType);
+          }
+        } else {
+          console.warn('[SERRVICELOAD ] raw fetch response not ok', resp.status);
+        }
+      } catch (fetchErr) {
+        console.warn('[SERRVICELOAD ] raw fetch failed for', firstUrl, fetchErr);
+      }
+    } else {
+      console.log('[SERRVICELOAD ] no firstUrl available for raw fetch');
+    }
+
+    console.error('[SERRVICELOAD ] final structured failure for', studyUid);
+// replace occurrences of this.getRecoveryOptionsForNoImages() with this quick inline array
+const defaultRecoveryOptions = [
+  { type: 'retry', label: 'Retry', description: 'Try loading the study again' },
+  { type: 'use_cached', label: 'Use cached data (if available)', description: 'Load images from local cache' },
+  { type: 'basic_viewer', label: 'Open Basic Viewer', description: 'Open a simplified viewer that may handle different formats' },
+  { type: 'report', label: 'Report issue', description: 'Create a bug report with logs' }
+];
+
+console.log('[SERRVICELOAD ] returning success with images array:', images.map(img => ({
+  imageId: img.imageId,
+  hasCornerstoneImage: !!img.cornerstoneImage,
+  hasHtmlImage: !!img.htmlImage,
+  hasCanvas: !!img.canvas,
+  meta: img.meta
+})));
+
+
+// example:
+return { success: false, message: 'Failed to load any images from the study (recovery did not produce images)', recoveryOptions: defaultRecoveryOptions };
+  } catch (error) {
+    studyState.isLoading = false;
+    const totalTime = performance.now() - startTime;
+    performanceMonitor.recordStudyLoadTime(totalTime);
+    const normalized = (error instanceof Error) ? error : new Error(String((error as any)?.message || error || 'Unknown study load error'));
+    console.error('[SERRVICELOAD ] unexpected failure in loadStudy for', studyUid, normalized);
+    throw normalized;
+  } finally {
+    console.log('[SERRVICELOAD ] finished loadStudy for', studyUid, 'state:', {
+      loaded: studyState.loadedImages,
+      failed: studyState.failedImages,
+      isLoading: studyState.isLoading
+    });
   }
+}
+
+
 
   /**
    * Preload images intelligently based on current viewing context
@@ -516,18 +707,43 @@ class EnhancedDicomService {
     });
   }
 
-  private configureExternalLibraries(): void {
-    // Configure cornerstone WADO image loader
-    if (typeof (cornerstoneWADOImageLoader as any).external === 'object') {
-      (cornerstoneWADOImageLoader as any).external.cornerstone = cornerstone;
-      (cornerstoneWADOImageLoader as any).external.dicomParser = dicomParser;
-    }
+  // private configureExternalLibraries(): void {
+  //   // Configure cornerstone WADO image loader
+  //   if (typeof (cornerstoneWADOImageLoader as any).external === 'object') {
+  //     (cornerstoneWADOImageLoader as any).external.cornerstone = cornerstone;
+  //     (cornerstoneWADOImageLoader as any).external.dicomParser = dicomParser;
+  //   }
 
-    // Configure web image loader
-    if (typeof (cornerstoneWebImageLoader as any).external === 'object') {
-      (cornerstoneWebImageLoader as any).external.cornerstone = cornerstone;
+  //   // Configure web image loader
+  //   if (typeof (cornerstoneWebImageLoader as any).external === 'object') {
+  //     (cornerstoneWebImageLoader as any).external.cornerstone = cornerstone;
+  //   }
+  // }
+
+
+
+private configureExternalLibraries(): void {
+  try {
+    const wadoExt = (cornerstoneWADOImageLoader as any).external;
+    if (wadoExt && typeof wadoExt === 'object') {
+      // Do not overwrite the property (it may be getter-only). Instead set properties on the existing object.
+      try {
+        wadoExt.cornerstone = cornerstone;
+        wadoExt.dicomParser = dicomParser;
+        console.log('[SERRVICELOAD ] configureExternalLibraries: attached cornerstone and dicomParser to existing external object');
+      } catch (e) {
+        console.warn('[SERRVICELOAD ] configureExternalLibraries: failed to assign to existing external object', e);
+      }
+    } else {
+      // If external is not present or not writable, log and continue (we'll still use direct HTTP parsing fallback)
+      console.warn('[SERRVICELOAD ] configureExternalLibraries: external object not writable or missing — skipping assignment');
     }
+  } catch (err) {
+    console.warn('[SERRVICELOAD ] configureExternalLibraries failed', err);
   }
+}
+
+
 
   private configureWADOImageLoader(): void {
     try {
@@ -570,179 +786,460 @@ class EnhancedDicomService {
     console.log('Cornerstone error handling would be set up here');
   }
 
-  private async createLoadingPromise(imageId: string, options: LoadingOptions): Promise<any> {
-    const retryConfig = { ...this.defaultRetryConfig, ...options.retryConfig };
-    let lastError: Error | null = null;
+private async createLoadingPromise(imageId: string, options: LoadingOptions): Promise<any> {
+  const retryConfig = { ...this.defaultRetryConfig, ...options.retryConfig };
+  let lastError: Error | null = null;
 
-    for (let attempt = 1; attempt <= retryConfig.maxAttempts; attempt++) {
-      try {
-        console.log(`🔄 [EnhancedDicomService] Attempt ${attempt}/${retryConfig.maxAttempts} for: ${imageId}`);
-        
-        // Update loading state
-        this.updateLoadingState(imageId, 'loading', attempt);
+  for (let attempt = 1; attempt <= retryConfig.maxAttempts; attempt++) {
+    try {
+      console.log(`🔄 [SERRVICELOAD ] Attempt ${attempt}/${retryConfig.maxAttempts} for: ${imageId}`);
 
-        // Load the image with fallback strategies
-        const image = await this.loadImageAttempt(imageId, options);
+      // Update loading state
+      this.updateLoadingState(imageId, 'loading', attempt);
 
-        // Cache the successful result
-        this.cacheImage(imageId, image);
+      // Instead of a single attempt, use the ordered fallback strategies
+      const image = await this.loadImageWithFallbacks(imageId, options);
 
-        // Update loading state
-        this.updateLoadingState(imageId, 'success', attempt);
+      // Cache the successful result
+      this.cacheImage(imageId, image);
 
-        // Reset circuit breaker on success
-        this.resetCircuitBreaker(imageId);
+      // Update loading state
+      this.updateLoadingState(imageId, 'success', attempt);
 
-        // Notify recovery callbacks
-        this.recoveryCallbacks.forEach(callback => callback(imageId));
+      // Reset circuit breaker on success
+      this.resetCircuitBreaker(imageId);
 
-        return image;
+      // Notify recovery callbacks
+      this.recoveryCallbacks.forEach(callback => callback(imageId));
 
-      } catch (error) {
-        lastError = error as Error;
-        
-        console.warn(`⚠️ [EnhancedDicomService] Attempt ${attempt} failed for ${imageId}:`, error);
-        
-        // Update loading state
-        this.updateLoadingState(imageId, 'failed', attempt, lastError);
+      return image;
 
-        // Update circuit breaker
-        this.updateCircuitBreaker(imageId);
+    } catch (error) {
+      lastError = error as Error;
 
-        // If this is the last attempt, handle the error comprehensively
-        if (attempt === retryConfig.maxAttempts) {
-          const viewerError = await errorHandler.handleError(lastError, {
-            imageId,
-            viewerMode: 'image_loading_final_failure'
-          });
-          
-          // Notify error callbacks with the original error converted to ViewerError
-          const originalViewerError = errorHandler.createViewerError(lastError);
-          this.errorCallbacks.forEach(callback => callback(originalViewerError));
-          
-          throw viewerError;
-        }
+      console.warn(`⚠️ [SERRVICELOAD ] Attempt ${attempt} failed for ${imageId}:`, lastError);
 
-        // Wait before retry with exponential backoff and jitter
-        const delay = this.calculateRetryDelay(attempt, retryConfig);
-        console.log(`⏳ [EnhancedDicomService] Waiting ${delay}ms before retry ${attempt + 1}`);
-        await this.sleep(delay);
+      // Update loading state
+      this.updateLoadingState(imageId, 'failed', attempt, lastError);
+
+      // Update circuit breaker
+      this.updateCircuitBreaker(imageId);
+
+      // If this is the last attempt, escalate to error handler
+      if (attempt === retryConfig.maxAttempts) {
+        const viewerError = await errorHandler.handleError(lastError, {
+          imageId,
+          viewerMode: 'image_loading_final_failure'
+        });
+
+        // Notify error callbacks with the normalized ViewerError
+        const originalViewerError = errorHandler.createViewerError(lastError);
+        this.errorCallbacks.forEach(callback => callback(originalViewerError));
+
+        throw viewerError;
       }
+
+      // Backoff delay
+      const delay = this.calculateRetryDelay(attempt, retryConfig);
+      console.log(`⏳ [SERRVICELOAD ] Waiting ${delay}ms before retry ${attempt + 1} for ${imageId}`);
+      await this.sleep(delay);
+    }
+  }
+
+  throw lastError || new Error('Unknown error in loading promise');
+}
+/**
+ * Load using VTK enhanced service if available.
+ * This attempts to detect a VTK service injected on window or attached to this instance.
+ * If not present or not capable, it will throw to allow other strategies to run.
+ */
+private async loadWithVTK(imageId: string, options: LoadingOptions): Promise<any> {
+  console.log('[SERRVICELOAD ] loadWithVTK start for', imageId, options);
+
+  // Try to find vtkEnhanced service — supports multiple injection patterns
+  const vtkSvc =
+    (this as any).VTKEnhancedService ||
+    (this as any).vtkService ||
+    (window as any).vtkEnhancedService ||
+    (window as any).vtkService ||
+    null;
+
+  if (!vtkSvc) {
+    console.warn('[SERRVICELOAD ] loadWithVTK: no vtk service found on this or window — skipping VTK path.');
+    throw new Error('VTK service not available');
+  }
+
+  // Normalize URL
+  const url = (typeof imageId === 'string' && imageId.startsWith('wadouri:')) ? imageId.replace(/^wadouri:/, '') : String(imageId);
+
+  try {
+    // Fetch raw bytes (we still parse; VTK wrapper may accept raw bytes or typed arrays)
+    console.log('[SERRVICELOAD ] loadWithVTK fetching raw bytes for', url);
+    const resp = await fetch(url, { method: 'GET', cache: 'no-cache' });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    }
+    const arrayBuffer = await resp.arrayBuffer();
+    const size = arrayBuffer.byteLength;
+    console.log('[SERRVICELOAD ] loadWithVTK fetched bytes:', size);
+
+    // Try to parse some DICOM metadata for diagnostics
+    let meta: any = {};
+    try {
+      const byteArray = new Uint8Array(arrayBuffer);
+      const dataSet = dicomParser.parseDicom(byteArray);
+      meta.TransferSyntaxUID = dataSet.string('x00020010') || dataSet.string('x00020012') || dataSet.string('x00020002');
+      meta.Rows = dataSet.uint16('x00280010');
+      meta.Columns = dataSet.uint16('x00280011');
+      meta.PixelDataPresent = !!dataSet.elements.x7fe00010;
+      meta.BitsAllocated = dataSet.uint16('x00280100');
+      meta.SamplesPerPixel = dataSet.uint16('x00280002');
+      meta._parsed = true;
+      console.log('[SERRVICELOAD ] loadWithVTK dicom-parser meta:', meta);
+    } catch (pErr) {
+      console.warn('[SERRVICELOAD ] loadWithVTK dicom-parser parse failed (non-fatal):', pErr);
+      meta._parsed = false;
     }
 
-    // This should never be reached, but just in case
-    throw lastError || new Error('Unknown error in loading promise');
+    // Build a payload that a typical vtkEnhancedService would accept:
+    const payload = {
+      imageId,
+      url,
+      arrayBuffer,            // raw bytes
+      byteArray: new Uint8Array(arrayBuffer),
+      meta,
+      options
+    };
+
+    console.log('[SERRVICELOAD ] loadWithVTK calling vtk service, payload keys:', Object.keys(payload.meta || {}).length ? Object.keys(payload) : Object.keys(payload));
+
+    // Two common method names — try them in order
+    if (typeof vtkSvc.loadDicomFromArrayBuffer === 'function') {
+      console.log('[SERRVICELOAD ] loadWithVTK using vtkSvc.loadDicomFromArrayBuffer');
+      const res = await vtkSvc.loadDicomFromArrayBuffer(payload.arrayBuffer, { imageId, options });
+      console.log('[SERRVICELOAD ] vtkSvc.loadDicomFromArrayBuffer succeeded', !!res);
+      return res;
+    }
+
+    if (typeof vtkSvc.renderImageFromArrayBuffer === 'function') {
+      console.log('[SERRVICELOAD ] loadWithVTK using vtkSvc.renderImageFromArrayBuffer');
+      const res = await vtkSvc.renderImageFromArrayBuffer((payload.byteArray), { imageId, viewportId: options.quality || 'default' });
+      console.log('[SERRVICELOAD ] vtkSvc.renderImageFromArrayBuffer succeeded', !!res);
+      return res;
+    }
+
+    // Generic loader hook: renderImageInViewport (in case service expects viewport element)
+    if (typeof vtkSvc.renderImageInViewport === 'function') {
+      // Provide viewport element if service expects it (caller will pick element)
+      const viewportEl = document.createElement('div'); // placeholder - caller may replace
+      console.log('[SERRVICELOAD ] loadWithVTK calling vtkSvc.renderImageInViewport (placeholder element used)');
+      const res = await vtkSvc.renderImageInViewport(viewportEl, {
+        pixelData: payload.byteArray,
+        rows: meta.Rows,
+        columns: meta.Columns,
+        imageId
+      });
+      return res;
+    }
+
+    console.warn('[SERRVICELOAD ] loadWithVTK: vtk service present but no compatible method found');
+    throw new Error('VTK service present but not compatible (missing expected methods)');
+
+  } catch (err) {
+    console.error('[SERRVICELOAD ] loadWithVTK failed for', imageId, err);
+    throw err;
   }
+}
+
 
   /**
    * Get loading strategies in order of preference
    */
-  private getLoadingStrategies(imageId: string): LoadingStrategy[] {
-    return [
-      {
-        name: 'cornerstone_wadouri',
-        description: 'Standard Cornerstone WADO-URI loader',
-        load: async (id: string, opts: LoadingOptions) => {
-          return await this.loadWithCornerstone(id, opts);
-        }
-      },
-      {
-        name: 'direct_http',
-        description: 'Direct HTTP request with custom parsing',
-        load: async (id: string, opts: LoadingOptions) => {
-          return await this.loadWithDirectHttp(id, opts);
-        }
-      },
-      {
-        name: 'backend_api',
-        description: 'Backend API processing',
-        load: async (id: string, opts: LoadingOptions) => {
-          return await this.loadWithBackendApi(id, opts);
-        }
-      },
-      {
-        name: 'web_image_fallback',
-        description: 'Web image loader fallback',
-        load: async (id: string, opts: LoadingOptions) => {
-          return await this.loadWithWebImageLoader(id, opts);
-        }
+/**
+ * Get loading strategies in order of preference
+ * - Prefer VTK rendering/decoding when available (for 2D & 3D)
+ * - Then try direct HTTP parsing, backend API, then web-image fallback
+ */
+private getLoadingStrategies(imageId: string): LoadingStrategy[] {
+  return [
+    {
+      name: 'vtk_enhanced',
+      description: 'VTK.js enhanced loader (preferred for 2D/3D rendering)',
+      load: async (id: string, opts: LoadingOptions) => {
+        return await this.loadWithVTK(id, opts);
       }
-    ];
-  }
+    },
+    {
+      name: 'cornerstone_wadouri',
+      description: 'Cornerstone WADO-URI loader (legacy fallback)',
+      load: async (id: string, opts: LoadingOptions) => {
+        return await this.loadWithCornerstone(id, opts);
+      }
+    },
+    {
+      name: 'direct_http',
+      description: 'Direct HTTP request with custom parsing',
+      load: async (id: string, opts: LoadingOptions) => {
+        return await this.loadWithDirectHttp(id, opts);
+      }
+    },
+    {
+      name: 'backend_api',
+      description: 'Backend API processing',
+      load: async (id: string, opts: LoadingOptions) => {
+        return await this.loadWithBackendApi(id, opts);
+      }
+    },
+    {
+      name: 'web_image_fallback',
+      description: 'Web image loader fallback',
+      load: async (id: string, opts: LoadingOptions) => {
+        return await this.loadWithWebImageLoader(id, opts);
+      }
+    }
+  ];
+}
+
+
 
   /**
    * Load using standard Cornerstone WADO-URI loader
    */
-  private async loadWithCornerstone(imageId: string, options: LoadingOptions): Promise<any> {
-    try {
-      // Ensure proper WADO-URI format
-      let wadoImageId = imageId;
-      if (!imageId.startsWith('wadouri:')) {
-        wadoImageId = `wadouri:${imageId}`;
-      }
-
-      const image = await cornerstone.loadImage(wadoImageId);
-      
-      if (!image) {
-        throw new Error('Cornerstone returned null image');
-      }
-
-      return image;
-    } catch (error) {
-      console.error('Cornerstone loading failed:', error);
-      throw error;
+private async loadWithCornerstone(imageId: string, options: LoadingOptions): Promise<NormalizedImage> {
+  console.log('[SERRVICELOAD ] loadWithCornerstone start for', imageId);
+  try {
+    let wadoImageId = imageId;
+    if (!imageId.startsWith('wadouri:')) {
+      wadoImageId = `wadouri:${imageId}`;
     }
+
+    const csImage = await cornerstone.loadImage(wadoImageId);
+    if (!csImage) {
+      throw new Error('Cornerstone returned null image');
+    }
+
+    // Wrap into normalized shape
+    const normalized: NormalizedImage = {
+      imageId,
+      cornerstoneImage: csImage,
+      meta: {
+        rows: csImage.rows,
+        columns: csImage.columns,
+        windowCenter: csImage.windowCenter,
+        windowWidth: csImage.windowWidth,
+        color: csImage.color ?? false
+      }
+    };
+
+    console.log('[SERRVICELOAD ] loadWithCornerstone -> normalized result:', {
+      imageId: normalized.imageId,
+      hasCornerstoneImage: !!normalized.cornerstoneImage,
+      meta: normalized.meta
+    });
+
+    return normalized;
+  } catch (err) {
+    console.error('[SERRVICELOAD ] loadWithCornerstone failed for', imageId, err);
+    throw err;
   }
+}
+
 
   /**
    * Load using direct HTTP request
    */
-  private async loadWithDirectHttp(imageId: string, options: LoadingOptions): Promise<any> {
-    try {
-      // Clean the image ID to get the URL
-      let url = imageId.replace(/^wadouri:/, '');
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/dicom, */*',
-          'Cache-Control': 'no-cache'
-        },
-        // Note: AbortSignal.timeout is not available in all browsers, using manual timeout
-        signal: this.createTimeoutSignal(options.timeout || 30000)
-      });
+private async loadWithDirectHttp(imageId: string, options: LoadingOptions): Promise<NormalizedImage> {
+  console.log('[SERRVICELOAD ] loadWithDirectHttp start for', imageId);
+  try {
+    // Get URL
+    let url = (imageId || '').replace(/^wadouri:/i, '');
+    if (!url.startsWith('http')) url = `${environmentService.getApiUrl()}${url}`;
+    console.log('[SERRVICELOAD ] fetch url:', url);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: { 'Accept': 'application/dicom, */*', 'Cache-Control': 'no-cache' },
+      signal: this.createTimeoutSignal(options.timeout || 30000)
+    });
+
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    }
+
+    const arrayBuffer = await resp.arrayBuffer();
+    console.log('[SERRVICELOAD ] fetched bytes:', arrayBuffer.byteLength);
+
+    // Parse with dicom-parser
+    let dataSet: any = null;
+    const parsedMeta: any = {};
+    try {
+      const byteArray = new Uint8Array(arrayBuffer);
+      dataSet = dicomParser.parseDicom(byteArray);
+
+      parsedMeta.TransferSyntaxUID =
+        dataSet.string('x00020010') ||
+        dataSet.string('x00020012') ||
+        dataSet.string('x00020002') || null;
+      parsedMeta.Rows = dataSet.uint16('x00280010');
+      parsedMeta.Columns = dataSet.uint16('x00280011');
+      parsedMeta.BitsAllocated = dataSet.uint16('x00280100');
+      parsedMeta.SamplesPerPixel = dataSet.uint16('x00280002');
+      parsedMeta.PixelDataPresent = !!(dataSet.elements && dataSet.elements.x7fe00010);
+
+      console.log('[SERRVICELOAD ] dicom-parser metadata:', parsedMeta);
+    } catch (pe) {
+      console.warn('[SERRVICELOAD ] dicom-parser failed:', pe);
+      parsedMeta.parseError = (pe && (pe as any).message) || String(pe);
+    }
+
+    const ts = parsedMeta.TransferSyntaxUID;
+
+    // If JPEG Baseline TSUID -> extract fragments and build JPEG blob
+    if (ts === '1.2.840.10008.1.2.4.50') {
+      console.log('[SERRVICELOAD ] Detected JPEG Baseline TSUID, attempting fragment extraction');
+
+      if (!dataSet || !dataSet.elements || !dataSet.elements.x7fe00010) {
+        throw new Error('PixelData element missing for compressed JPEG DICOM');
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      
-      // Create a basic image object (simplified for now)
-      return {
+      const pixelElem = dataSet.elements.x7fe00010;
+      const underlying = (dataSet as any).byteArray as Uint8Array;
+      const fragments: Uint8Array[] = [];
+
+      // Try dicomParser helper first
+      try {
+        if ((dicomParser as any).readEncapsulatedPixelData) {
+          const frags = (dicomParser as any).readEncapsulatedPixelData(dataSet, pixelElem);
+          if (frags && frags.length) {
+            for (const f of frags) fragments.push(f);
+          }
+        }
+      } catch (e) {
+        console.warn('[SERRVICELOAD ] readEncapsulatedPixelData failed:', e);
+      }
+
+      // Fallback: dataSet.fragments
+      if (fragments.length === 0 && (dataSet as any).fragments && (dataSet as any).fragments.x7fe00010) {
+        const fragArray = (dataSet as any).fragments.x7fe00010;
+        for (const frag of fragArray) fragments.push(new Uint8Array(frag));
+      }
+
+      // Last fallback: copy the whole element bytes (best-effort)
+      if (fragments.length === 0 && pixelElem && typeof pixelElem.dataOffset === 'number') {
+        try {
+          const start = pixelElem.dataOffset;
+          const len = pixelElem.length || (underlying.length - start);
+          fragments.push(new Uint8Array(underlying.buffer, start, len));
+        } catch (e) {
+          console.warn('[SERRVICELOAD ] fallback fragment extraction failed:', e);
+        }
+      }
+
+      if (fragments.length === 0) {
+        throw new Error('No encapsulated JPEG fragments found');
+      }
+
+      // Concatenate fragments
+      let total = 0;
+      for (const f of fragments) total += f.byteLength;
+      const combined = new Uint8Array(total);
+      let off = 0;
+      for (const f of fragments) {
+        combined.set(f, off);
+        off += f.byteLength;
+      }
+
+      // Make blob, image, canvas
+      const blob = new Blob([combined.buffer], { type: 'image/jpeg' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const htmlImg: HTMLImageElement = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = (e) => reject(new Error('Failed to create HTML image from JPEG blob'));
+        i.crossOrigin = 'anonymous';
+        i.src = blobUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = htmlImg.width;
+      canvas.height = htmlImg.height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(htmlImg, 0, 0);
+
+      const normalized: NormalizedImage = {
         imageId,
-        minPixelValue: 0,
-        maxPixelValue: 255,
-        slope: 1,
-        intercept: 0,
-        windowCenter: 128,
-        windowWidth: 256,
-        rows: 512,
-        columns: 512,
-        height: 512,
-        width: 512,
-        color: false,
-        columnPixelSpacing: 1,
-        rowPixelSpacing: 1,
-        invert: false,
-        sizeInBytes: arrayBuffer.byteLength,
-        getPixelData: () => new Uint8Array(arrayBuffer)
+        htmlImage: htmlImg,
+        canvas,
+        meta: parsedMeta
       };
-    } catch (error) {
-      console.error('Direct HTTP loading failed:', error);
-      throw error;
+
+      console.log('[SERRVICELOAD ] loadWithDirectHttp -> built image from JPEG fragments', {
+        imageId,
+        width: htmlImg.width,
+        height: htmlImg.height,
+        meta: parsedMeta
+      });
+
+      return normalized;
     }
+
+    // If uncompressed pixel data present -> attempt to build canvas from raw pixel array (best-effort)
+    if (parsedMeta.PixelDataPresent && (!ts || ts === '1.2.840.10008.1.2' || ts === '1.2.840.10008.1.2.1')) {
+      try {
+        // Attempt to extract pixel data from dataset
+        const elem = dataSet.elements.x7fe00010;
+        if (elem) {
+          const byteArray = (dataSet as any).byteArray as Uint8Array;
+          const pixelOffset = elem.dataOffset;
+          const pixelLength = elem.length;
+          const pixelData = new Uint8Array(byteArray.buffer, pixelOffset, pixelLength);
+
+          // Build ImageData for canvas (assuming 8-bit grayscale)
+          const rows = parsedMeta.Rows || 0;
+          const cols = parsedMeta.Columns || 0;
+          const imgCanvas = document.createElement('canvas');
+          imgCanvas.width = cols;
+          imgCanvas.height = rows;
+          const ctx = imgCanvas.getContext('2d');
+          const imageData = ctx!.createImageData(cols, rows);
+          // Fill RGBA from grayscale pixelData
+          for (let p = 0, q = 0; p < pixelData.length && q < imageData.data.length; p++, q += 4) {
+            const v = pixelData[p];
+            imageData.data[q] = v;
+            imageData.data[q + 1] = v;
+            imageData.data[q + 2] = v;
+            imageData.data[q + 3] = 255;
+          }
+          ctx!.putImageData(imageData, 0, 0);
+
+          const normalized: NormalizedImage = {
+            imageId,
+            canvas: imgCanvas,
+            meta: parsedMeta
+          };
+          console.log('[SERRVICELOAD ] loadWithDirectHttp -> constructed canvas from uncompressed pixel data', { imageId, rows, cols });
+          return normalized;
+        }
+      } catch (e) {
+        console.warn('[SERRVICELOAD ] failed to construct canvas from raw pixel data:', e);
+      }
+    }
+
+    // Otherwise, no usable image
+    const msg = 'Direct HTTP fetch succeeded but could not create usable image client-side';
+    const ve = new ViewerError(msg, 'RAW_FETCH_NO_IMAGE', 'high');
+    (ve as any).diagnostic = parsedMeta;
+    throw ve;
+
+  } catch (err) {
+    console.error('[SERRVICELOAD ] loadWithDirectHttp failed for', imageId, err);
+    throw err;
   }
+}
+
+
+
 
   /**
    * Load using backend API processing with fallback filename support
@@ -776,7 +1273,7 @@ class EnhancedDicomService {
         try {
           console.log(`🔄 [EnhancedDicomService] Trying backend API with filename: ${filename}`);
           
-          const apiUrl = `http://localhost:8000/dicom/process/${patientId}/${filename}?output_format=PNG&frame=0`;
+          const apiUrl = `${environmentService.getApiUrl()}/dicom/process/${patientId}/${filename}?output_format=PNG&frame=0`;
           
           const response = await fetch(apiUrl, {
             signal: this.createTimeoutSignal(options.timeout || 60000)
@@ -932,7 +1429,7 @@ class EnhancedDicomService {
   private handleWADOError(error: any): void {
     // Enhanced WADO error logging
     console.group('🔴 [EnhancedDicomService] WADO Error');
-    console.error('Error:', error);
+    console.error('Error:', error?.message || error?.toString() || JSON.stringify(error));
     
     if (error?.request) {
       const xhr = error.request;
@@ -972,19 +1469,58 @@ class EnhancedDicomService {
   private extractImageIds(study: Study): string[] {
     const imageIds: string[] = [];
     
+    // Handle array of image URLs (existing format)
     if (study.image_urls && Array.isArray(study.image_urls)) {
       study.image_urls.forEach(url => {
         if (url && typeof url === 'string') {
           // Clean up the URL and add appropriate prefix
           let cleanUrl = url.replace(/^wadouri:/i, '');
           if (!cleanUrl.startsWith('http')) {
-            cleanUrl = `http://localhost:8000${cleanUrl}`;
+            cleanUrl = `${environmentService.getApiUrl()}${cleanUrl}`;
           }
           imageIds.push(`wadouri:${cleanUrl}`);
         }
       });
     }
+    
+    // Handle single file with filename and dicom_url (real patient data format)
+    else if (study.filename || study.dicom_url) {
+      let imageUrl = '';
+      
+      if (study.dicom_url) {
+        // Use dicom_url directly
+        imageUrl = study.dicom_url;
+      } else if (study.filename && study.patient_id) {
+        // Construct URL from patient_id and filename
+        imageUrl = `/uploads/${study.patient_id}/${study.filename}`;
+      } else if (study.filename) {
+        // Fallback: use filename directly
+        imageUrl = `/uploads/${study.filename}`;
+      }
+      
+      if (imageUrl) {
+        // Clean up the URL and add appropriate prefix
+        let cleanUrl = imageUrl.replace(/^wadouri:/i, '');
+        if (!cleanUrl.startsWith('http')) {
+          cleanUrl = `${environmentService.getApiUrl()}${cleanUrl}`;
+        }
+        imageIds.push(`wadouri:${cleanUrl}`);
+        console.log('[SERRVICELOAD] extracted imageId for real patient data:', `wadouri:${cleanUrl}`);
+      }
+    }
+    
+    // Handle original_filename as fallback
+    else if (study.original_filename && study.patient_id) {
+      const imageUrl = `/uploads/${study.patient_id}/${study.original_filename}`;
+      let cleanUrl = imageUrl.replace(/^wadouri:/i, '');
+      if (!cleanUrl.startsWith('http')) {
+        cleanUrl = `${environmentService.getApiUrl()}${cleanUrl}`;
+      }
+      imageIds.push(`wadouri:${cleanUrl}`);
+      console.log('[SERRVICELOAD] extracted imageId from original_filename:', `wadouri:${cleanUrl}`);
+    }
 
+    console.log('[SERRVICELOAD] extractImageIds result:', imageIds);
     return imageIds;
   }
 

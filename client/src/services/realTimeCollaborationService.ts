@@ -4,6 +4,7 @@
  */
 
 import { io, Socket } from 'socket.io-client';
+import { environmentService } from '../config/environment';
 
 interface CollaborationUser {
   id: string;
@@ -75,7 +76,7 @@ class RealTimeCollaborationService {
   }
 
   private initializeSocket(): void {
-    const serverUrl = process.env.REACT_APP_COLLABORATION_SERVER || 'http://localhost:8001';
+    const serverUrl = environmentService.getCollaborationUrl() || 'http://localhost:8001';
     
     this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],

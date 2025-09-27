@@ -270,7 +270,7 @@ export class MemoryManager {
   private texturePool: TexturePool | null = null;
   private memoryStats: MemoryStats;
   private cleanupInterval: number | null = null;
-  private memoryPressureCallbacks: Array<(pressure: string) => void> = [];
+  private memoryPressureCallbacks: Array<(pressure: 'low' | 'medium' | 'high' | 'critical') => void> = [];
   private lastGCHint: number = 0;
   private gcHintCooldown: number = 5000; // 5 seconds between GC hints
 
@@ -343,7 +343,7 @@ export class MemoryManager {
   /**
    * Register callback for memory pressure changes
    */
-  onMemoryPressure(callback: (pressure: string) => void): void {
+  onMemoryPressure(callback: (pressure: 'low' | 'medium' | 'high' | 'critical') => void): void {
     this.memoryPressureCallbacks.push(callback);
   }
 

@@ -9,7 +9,6 @@ const fs = require('fs').promises;
 router.get('/studies', async (req, res) => {
   try {
     const studies = await Study.find({ active: true })
-      .populate('patient_id', 'first_name last_name patient_id')
       .sort({ upload_time: -1 });
 
     const uploadsDir = path.join(__dirname, '..', 'uploads');

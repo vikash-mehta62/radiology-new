@@ -65,7 +65,7 @@ import {
 import { useParams } from "react-router-dom"
 
 // Primary DICOM Viewer
-import UnifiedDicomViewer from "../components/DICOM/UnifiedDicomViewer"
+import UnifiedDicomViewer from '../components/DICOM/unifieddicomviewer'
 import CreateReportDialog from "../components/Report/CreateReportDialog"
 import type { Study } from "../types"
 import { apiService } from "../services/api"
@@ -193,7 +193,24 @@ const StudyViewer: React.FC = () => {
         setStudy(response)
         console.log("✅ [StudyViewer] Study state set successfully")
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Failed to load study"
+        let errorMessage = "Failed to load study"
+        
+        // Enhanced error handling with specific messages
+        if (err instanceof Error) {
+          if (err.message.includes("404") || err.message.includes("not found")) {
+            // Check if the studyUid looks like a patient ID (starts with PAT_)
+            if (studyUid?.startsWith("PAT_")) {
+              errorMessage = `Study not found. It looks like you're using a Patient ID (${studyUid}) instead of a Study UID. Please navigate to the Studies page and select the correct study.`
+            } else {
+              errorMessage = `Study with UID "${studyUid}" was not found. Please check the URL or navigate back to the Studies page to select a valid study.`
+            }
+          } else if (err.message.includes("Network Error") || err.message.includes("fetch")) {
+            errorMessage = "Network error: Unable to connect to the server. Please check your connection and try again."
+          } else {
+            errorMessage = err.message
+          }
+        }
+        
         setError(errorMessage)
         console.error("❌ [StudyViewer] Error loading study:", err)
       } finally {
@@ -302,11 +319,46 @@ const StudyViewer: React.FC = () => {
 
   if (error) {
     return (
-      <Box>
-        <Button startIcon={<BackIcon />} onClick={() => console.log("Back to studies")} sx={{ mb: 2 }}>
+      <Box sx={{ p: 3, maxWidth: 800, mx: "auto" }}>
+        <Button 
+          startIcon={<BackIcon />} 
+          onClick={() => window.history.back()} 
+          sx={{ mb: 3 }}
+          variant="outlined"
+        >
           Back to Studies
         </Button>
-        <Alert severity="error">{error}</Alert>
+        
+        <Alert 
+          severity="error" 
+          sx={{ mb: 2 }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => window.location.href = '/studies'}
+            >
+              Go to Studies
+            </Button>
+          }
+        >
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Unable to Load Study
+          </Typography>
+          <Typography variant="body2">
+            {error}
+          </Typography>
+        </Alert>
+
+        {/* Additional help for common issues */}
+        {studyUid?.startsWith("PAT_") && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            <Typography variant="body2">
+              <strong>Tip:</strong> The URL should use the Study UID (a unique identifier for the study), not the Patient ID. 
+              Study UIDs typically look like: <code>1b43f0ed-7104-4a95-a009-af83f370e23d</code>
+            </Typography>
+          </Alert>
+        )}
       </Box>
     )
   }
@@ -699,22 +751,51 @@ const StudyViewer: React.FC = () => {
 
               {/* Viewer Content */}
               <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                <UnifiedDicomViewer
+                {study ? (
+                  <UnifiedDicomViewer
                     study={study}
                     userRole="radiologist"
                     viewerMode="diagnostic"
                     enableAdvancedTools={true}
-                    enableCollaboration={false}
-                    enableAI={false}
-                    enableWebGL={true}
+                    enableAI={true}
+                    enableWebGPU={true}
+                    enableWebGL2={true}
                     enableProgressiveLoading={true}
                     enableCaching={true}
                     adaptiveQuality={true}
-                    onError={(error) => {
-                      console.error("Unified DICOM Viewer Error:", error)
-                      setError(`Unified DICOM Viewer Error: ${error}`)
+                    enableSecurity={true}
+                    enablePerformanceMonitoring={true}
+                    enableAccessibility={true}
+                    targetFrameRate={60}
+                    maxMemoryUsage={1024}
+                    qualityPreset="diagnostic"
+                  defaultLayout="single"
+                  onStudyLoad={(study) => console.log('Study loaded:', study)}
+                  onError={(error) => {
+                    console.error('Viewer error:', error);
+                    setError(typeof error === 'string' ? error : error.message || 'Viewer error occurred');
+                  }}
+                  onPerformanceUpdate={(metrics) => console.log('Performance metrics:', metrics)}
+                  width="100%"
+                  height="calc(100vh - 200px)"
+                />
+                ) : (
+                  <Box
+                    sx={{
+                      p: 3,
+                      textAlign: "center",
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      bgcolor: "background.paper"
                     }}
-                  />
+                  >
+                    <Typography variant="h6" color="text.secondary">
+                      {loading ? "Loading study data..." : "No study data available"}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
             </>
           ) : (

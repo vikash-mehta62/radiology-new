@@ -298,7 +298,7 @@ class UnifiedStateManager extends EventEmitter {
 
     // Handle errors
     this.on('error', (error: Error) => {
-      console.error('🔴 [UnifiedStateManager] Error:', error);
+      console.error('🔴 [UnifiedStateManager] Error:', error?.message || error?.toString() || JSON.stringify(error));
       this.incrementErrorCount();
     });
   }

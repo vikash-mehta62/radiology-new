@@ -41,7 +41,7 @@ module.exports = {
   
   // Files to ignore during transformation
   transformIgnorePatterns: [
-    'node_modules/(?!(cornerstone-core|cornerstone-wado-image-loader|dicom-parser)/)'
+    'node_modules/(?!((@cornerstonejs|@kitware|vtk.js)/.*|cornerstone-core|cornerstone-wado-image-loader|dicom-parser|.*\\.mjs$))'
   ],
   
   // Test match patterns
@@ -130,14 +130,21 @@ module.exports = {
   
   // Mock modules
   moduleNameMapping: {
-    // Mock static assets
+    // Mock CSS and static assets
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
     '\\.(jpg|jpeg|png|gif|svg)$': '<rootDir>/src/__mocks__/fileMock.js',
     
-    // Mock DICOM libraries
+    // Mock legacy Cornerstone
     '^cornerstone-core$': '<rootDir>/src/__mocks__/cornerstone-core.js',
     '^cornerstone-wado-image-loader$': '<rootDir>/src/__mocks__/cornerstone-wado-image-loader.js',
-    '^dicom-parser$': '<rootDir>/src/__mocks__/dicom-parser.js'
+    '^dicom-parser$': '<rootDir>/src/__mocks__/dicom-parser.js',
+    
+    // Mock modern Cornerstone3D and VTK.js
+    '@cornerstonejs/core': '<rootDir>/src/__mocks__/cornerstone3d.ts',
+    '@cornerstonejs/tools': '<rootDir>/src/__mocks__/cornerstone3dTools.ts',
+    '@cornerstonejs/streaming-image-volume-loader': '<rootDir>/src/__mocks__/cornerstoneStreamingLoader.ts',
+    '@kitware/vtk.js/(.*)': '<rootDir>/src/__mocks__/vtk.ts',
+    'vtk.js/(.*)': '<rootDir>/src/__mocks__/vtk.ts'
   },
   
   // Reporters

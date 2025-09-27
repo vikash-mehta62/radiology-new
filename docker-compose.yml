@@ -1,0 +1,232 @@
+version: '3.8'
+
+services:
+  # Frontend - DICOM Viewer React App
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: production
+    container_name: dicom-viewer-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./client/nginx:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/ssl:ro
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=http://backend:3001
+      - REACT_APP_WS_URL=ws://backend:3001
+    depends_on:
+      - backend
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`dicom-viewer.local`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  # Backend - Node.js API Server
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: dicom-viewer-backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/cache:/app/cache
+      - dicom-data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_NAME=dicom_viewer
+      - DB_USER=dicom_user
+      - DB_PASSWORD=secure_password_123
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your_jwt_secret_here
+      - CORS_ORIGIN=http://localhost
+      - MAX_FILE_SIZE=100mb
+      - UPLOAD_PATH=/app/uploads
+      - CACHE_PATH=/app/cache
+    depends_on:
+      - database
+      - redis
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL Database
+  database:
+    image: postgres:15-alpine
+    container_name: dicom-viewer-db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./server/scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      - POSTGRES_DB=dicom_viewer
+      - POSTGRES_USER=dicom_user
+      - POSTGRES_PASSWORD=secure_password_123
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dicom_user -d dicom_viewer"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: dicom-viewer-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Monitoring - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: dicom-viewer-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - dicom-network
+    restart: unless-stopped
+
+  # Monitoring - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dicom-viewer-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SMTP_ENABLED=false
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Log Management - ELK Stack (Optional)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: dicom-viewer-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    profiles:
+      - logging
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.8.0
+    container_name: dicom-viewer-logstash
+    volumes:
+      - ./monitoring/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./monitoring/logstash/config:/usr/share/logstash/config:ro
+    ports:
+      - "5044:5044"
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+    profiles:
+      - logging
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: dicom-viewer-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - dicom-network
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+    profiles:
+      - logging
+
+# Networks
+networks:
+  dicom-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  dicom-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  elasticsearch-data:
+    driver: local

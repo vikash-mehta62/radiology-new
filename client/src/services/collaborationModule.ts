@@ -3,6 +3,8 @@
  * WebSocket-based real-time synchronization for multi-user medical imaging collaboration
  */
 
+import { environmentService } from '../config/environment';
+
 export interface User {
   id: string;
   name: string;
@@ -179,7 +181,7 @@ class CollaborationModule {
 
   constructor(config: Partial<CollaborationConfig>) {
     this.config = {
-      serverUrl: config.serverUrl || 'ws://localhost:8080',
+      serverUrl: config.serverUrl || environmentService.getCollaborationUrl() || 'ws://localhost:8080',
       autoReconnect: config.autoReconnect ?? true,
       reconnectInterval: config.reconnectInterval ?? 5000,
       maxReconnectAttempts: config.maxReconnectAttempts ?? 10,

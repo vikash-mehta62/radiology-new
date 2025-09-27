@@ -34,79 +34,95 @@ const DicomSidebar: React.FC<DicomSidebarProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState(0);
 
-  const renderStudyInfo = () => (
-    <Box sx={{ p: 2 }}>
-      <Typography variant="h6" gutterBottom>
-        Study Information
-      </Typography>
-      
-      <List dense>
-        <ListItem>
-          <ListItemText
-            primary="Patient"
-            secondary={study.patient_info?.name || 'Unknown'}
-          />
-        </ListItem>
-        <ListItem>
-          <ListItemText
-            primary="Study Date"
-            secondary={study.study_date}
-          />
-        </ListItem>
-        <ListItem>
-          <ListItemText
-            primary="Modality"
-            secondary={study.modality}
-          />
-        </ListItem>
-        <ListItem>
-          <ListItemText
-            primary="Description"
-            secondary={study.study_description}
-          />
-        </ListItem>
-        <ListItem>
-          <ListItemText
-            primary="Images"
-            secondary={`${study.image_urls?.length || 0} images`}
-          />
-        </ListItem>
-      </List>
+  const renderStudyInfo = () => {
+    if (!study) {
+      return (
+        <Box sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Study Information
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            No study data available
+          </Typography>
+        </Box>
+      );
+    }
 
-      {/* DICOM Metadata */}
-      <Accordion>
-        <AccordionSummary expandIcon={<ExpandMore />}>
-          <Typography variant="subtitle2">DICOM Metadata</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <List dense>
-            <ListItem>
+    return (
+      <Box sx={{ p: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          Study Information
+        </Typography>
+        
+        <List dense>
+          <ListItem>
+            <ListItemText
+              primary="Patient"
+              secondary={study.patient_info?.name || 'Unknown'}
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText
+              primary="Study Date"
+              secondary={study.study_date || 'Unknown'}
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText
+              primary="Modality"
+              secondary={study.modality || 'Unknown'}
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText
+              primary="Description"
+              secondary={study.study_description || 'No description'}
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText
+              primary="Images"
+              secondary={`${study.image_urls?.length || 0} images`}
+            />
+          </ListItem>
+        </List>
+      </Box>
+    );
+  };
+
+  const renderDicomMetadata = () => (
+    <Accordion>
+      <AccordionSummary expandIcon={<ExpandMore />}>
+        <Typography variant="subtitle2">DICOM Metadata</Typography>
+      </AccordionSummary>
+      <AccordionDetails>
+        <List dense>
+          <ListItem>
+            <ListItemText
+              primary="Study UID"
+              secondary={study.study_uid}
+              secondaryTypographyProps={{ 
+                sx: { fontFamily: 'monospace', fontSize: '0.75rem' }
+              }}
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText
+              primary="Patient ID"
+              secondary={study.patient_id}
+            />
+          </ListItem>
+          {study.dicom_metadata && Object.entries(study.dicom_metadata).map(([key, value]) => (
+            <ListItem key={key}>
               <ListItemText
-                primary="Study UID"
-                secondary={study.study_uid}
-                secondaryTypographyProps={{ 
-                  sx: { fontFamily: 'monospace', fontSize: '0.75rem' }
-                }}
+                primary={key}
+                secondary={String(value)}
               />
             </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="Patient ID"
-                secondary={study.patient_id}
-              />
-            </ListItem>
-            {study.dicom_metadata && Object.entries(study.dicom_metadata).map(([key, value]) => (
-              <ListItem key={key}>
-                <ListItemText
-                  primary={key}
-                  secondary={String(value)}
-                />
-              </ListItem>
-            ))}
-          </List>
-        </AccordionDetails>
-      </Accordion>
-    </Box>
+          ))}
+        </List>
+      </AccordionDetails>
+    </Accordion>
   );
 
   const renderMeasurements = () => (

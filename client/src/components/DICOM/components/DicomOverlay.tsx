@@ -26,6 +26,11 @@ const DicomOverlay: React.FC<DicomOverlayProps> = ({
   zoom,
   modality
 }) => {
+  // Return null if study is not available
+  if (!study) {
+    return null;
+  }
+
   return (
     <>
       {/* Top Left - Patient Information */}
@@ -45,7 +50,7 @@ const DicomOverlay: React.FC<DicomOverlayProps> = ({
           {study.patient_info?.name || 'Unknown Patient'}
         </Typography>
         <Typography variant="caption" display="block">
-          ID: {study.patient_id}
+          ID: {study.patient_id || 'Unknown'}
         </Typography>
         <Typography variant="caption" display="block">
           DOB: {study.patient_info?.date_of_birth || 'Unknown'}
@@ -67,10 +72,10 @@ const DicomOverlay: React.FC<DicomOverlayProps> = ({
         }}
       >
         <Typography variant="caption" display="block">
-          {modality}
+          {modality || 'Unknown'}
         </Typography>
         <Typography variant="caption" display="block">
-          {study.study_date}
+          {study.study_date || 'Unknown'}
         </Typography>
         <Typography variant="caption" display="block">
           {study.study_description}

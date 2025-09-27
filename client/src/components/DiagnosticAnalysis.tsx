@@ -227,7 +227,7 @@ const DiagnosticAnalysis: React.FC<DiagnosticAnalysisProps> = ({
                                 {abnormality.description}
                               </Typography>
                               <Chip
-                                label={abnormality.type.toUpperCase()}
+                                label={abnormality.type?.toUpperCase() || 'UNKNOWN'}
                                 size="small"
                                 color={getSeverityColor(abnormality.type) as any}
                               />

@@ -1,0 +1,138 @@
+# Prometheus Configuration for DICOM Viewer Monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'dicom-viewer-monitor'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "rules/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # DICOM Viewer Backend
+  - job_name: 'dicom-backend'
+    static_configs:
+      - targets: ['backend:9464']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    scrape_timeout: 10s
+    honor_labels: true
+    params:
+      format: ['prometheus']
+
+  # DICOM Viewer Frontend (if metrics enabled)
+  - job_name: 'dicom-frontend'
+    static_configs:
+      - targets: ['frontend:80']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    scrape_timeout: 10s
+
+  # PostgreSQL Database
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Redis Cache
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Node Exporter (System Metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Nginx (if metrics enabled)
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Docker Container Metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Blackbox Exporter for Health Checks
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://frontend/health
+        - http://backend:3001/api/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention.time: 15d
+    retention.size: 10GB
+    wal-compression: true
+
+# Remote write configuration (optional - for long-term storage)
+# remote_write:
+#   - url: "http://remote-storage:8086/api/v1/prom/write?db=prometheus"
+#     queue_config:
+#       max_samples_per_send: 1000
+#       max_shards: 200
+#       capacity: 2500
+
+# Recording rules for performance optimization
+recording_rules:
+  - name: dicom_viewer_rules
+    interval: 30s
+    rules:
+      - record: dicom:request_rate_5m
+        expr: rate(http_requests_total[5m])
+      
+      - record: dicom:error_rate_5m
+        expr: rate(http_requests_total{status=~"5.."}[5m])
+      
+      - record: dicom:response_time_95p
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+      
+      - record: dicom:memory_usage_percent
+        expr: (process_resident_memory_bytes / node_memory_MemTotal_bytes) * 100
+      
+      - record: dicom:cpu_usage_percent
+        expr: rate(process_cpu_seconds_total[5m]) * 100
+      
+      - record: dicom:disk_usage_percent
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100

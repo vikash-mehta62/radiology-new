@@ -201,25 +201,31 @@ router.get('/', async (req, res) => {
 router.get('/:study_uid', async (req, res) => {
   try {
     const { study_uid } = req.params;
+    console.log(`[DEBUG] Looking for study with UID: ${study_uid}`);
     let study = null;
     
     try {
+      console.log('[DEBUG] Trying MongoDB first...');
       // Try MongoDB first
       study = await Study.findOne({ 
         study_uid: study_uid,
         active: true 
       });
+      console.log(`[DEBUG] MongoDB exact match result: ${study ? 'found' : 'not found'}`);
 
       // If not found, try partial match (like Python backend)
       if (!study) {
+        console.log('[DEBUG] Trying MongoDB partial match...');
         study = await Study.findOne({
           study_uid: { $regex: study_uid, $options: 'i' },
           active: true
         });
+        console.log(`[DEBUG] MongoDB partial match result: ${study ? 'found' : 'not found'}`);
       }
 
       // Manually populate patient data if study found
       if (study) {
+        console.log('[DEBUG] Found study in MongoDB, populating patient data...');
         const patient = await Patient.findOne({ 
           patient_id: study.patient_id, 
           active: true 
@@ -245,29 +251,39 @@ router.get('/:study_uid', async (req, res) => {
           } : null
         };
         
+        console.log('[DEBUG] Returning study from MongoDB');
         return res.json(studyWithPatient);
       }
 
     } catch (mongoError) {
-      console.log('MongoDB not available, using JSON fallback:', mongoError.message);
-      
-      // Fallback to JSON file
-      const jsonStudies = await loadStudiesFromJSON();
-      
-      // Try exact match first
-      study = jsonStudies.find(s => s.study_uid === study_uid);
-      
-      // If not found, try partial match
-      if (!study) {
-        study = jsonStudies.find(s => s.study_uid.includes(study_uid));
-      }
-      
-      if (study) {
-        return res.json(study);
-      }
+      console.log('[DEBUG] MongoDB error occurred:', mongoError.message);
+    }
+    
+    // If we reach here, MongoDB didn't find the study or had an error
+    console.log('[DEBUG] MongoDB search failed, trying JSON fallback...');
+    
+    // Fallback to JSON file
+    const jsonStudies = await loadStudiesFromJSON();
+    console.log(`[DEBUG] Loaded ${jsonStudies.length} studies from JSON`);
+    
+    // Try exact match first
+    study = jsonStudies.find(s => s.study_uid === study_uid);
+    console.log(`[DEBUG] JSON exact match result: ${study ? 'found' : 'not found'}`);
+    
+    // If not found, try partial match
+    if (!study) {
+      console.log('[DEBUG] Trying JSON partial match...');
+      study = jsonStudies.find(s => s.study_uid.includes(study_uid));
+      console.log(`[DEBUG] JSON partial match result: ${study ? 'found' : 'not found'}`);
+    }
+    
+    if (study) {
+      console.log('[DEBUG] Returning study from JSON fallback');
+      return res.json(study);
     }
 
     // If still not found, return 404
+    console.log(`[DEBUG] Study ${study_uid} not found anywhere, returning 404`);
     res.status(404).json({
       error: 'Study not found',
       detail: `Study with UID ${study_uid} not found`

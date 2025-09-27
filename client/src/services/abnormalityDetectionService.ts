@@ -294,6 +294,13 @@ export class AbnormalityDetectionService {
     // AI module cleanup would be called here if the method existed
   }
 
+  /**
+   * Dispose of the service
+   */
+  dispose(): void {
+    this.cleanup();
+  }
+
   // Private methods
 
   private async preprocessImage(imageData: ImageData): Promise<Float32Array> {

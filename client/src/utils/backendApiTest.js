@@ -37,7 +37,7 @@ async function testSliceDetection() {
 async function testFrameConversion(frameIndex = 0) {
   console.log(`🧪 Testing Frame Conversion API for frame ${frameIndex}...`);
   
-  const convertUrl = `${BASE_URL}/dicom/convert/${TEST_PATIENT_ID}/${TEST_FILENAME}?slice=${frameIndex}&t=${Date.now()}`;
+  const convertUrl = `${BASE_URL}/dicom/process/${TEST_PATIENT_ID}/${TEST_FILENAME}?output_format=PNG&frame=${frameIndex}&t=${Date.now()}`;
   console.log('📡 Convert URL:', convertUrl);
   
   try {

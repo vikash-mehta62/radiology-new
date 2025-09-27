@@ -1,16 +1,17 @@
 #!/bin/bash
 
-# Production Deployment Script for Kiro Radiology Multi-Slice Viewer
-# Version: 2.0.0
+# DICOM Viewer Production Deployment Script
+# This script handles the complete deployment process with safety checks
 
-set -e
-
-echo "🚀 Starting Production Deployment..."
+set -euo pipefail
 
 # Configuration
-DEPLOY_ENV="production"
-APP_NAME="kiro-radiology"
-VERSION="2.0.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_NAME="dicom-viewer"
+BACKUP_DIR="/opt/backups/${PROJECT_NAME}"
+LOG_FILE="/var/log/${PROJECT_NAME}-deploy.log"
+HEALTH_CHECK_TIMEOUT=300
+ROLLBACK_ENABLED=true
 
 # Colors for output
 RED='\033[0;31m'

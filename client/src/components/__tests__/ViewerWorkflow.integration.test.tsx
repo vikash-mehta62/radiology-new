@@ -12,8 +12,7 @@ import { getGlobalStateManager } from '../../services/unifiedStateManager';
 import { createEnhancedViewerManager } from '../../services/enhancedViewerManager';
 
 // Import components to test
-import UnifiedDicomViewer from '../DICOM/UnifiedDicomViewer';
-import EnhancedViewerContainer from '../DICOM/EnhancedViewerContainer';
+import UnifiedDicomViewer from '../DICOM/unifieddicomviewer';
 import ViewerModeSelector from '../DICOM/ViewerModeSelector';
 import StateManagementPanel from '../Common/StateManagementPanel';
 
@@ -313,11 +312,11 @@ describe('Viewer Workflow Integration Tests', () => {
     });
   });
 
-  describe('Enhanced Viewer Container Workflow', () => {
+  describe('Unified Viewer Complete Workflow', () => {
     test('should manage viewer modes seamlessly', async () => {
       render(
         <TestWrapper>
-          <EnhancedViewerContainer 
+          <UnifiedDicomViewerComplete 
             study={mockStudy}
             showModeSelector={true}
             enableAutoOptimization={true}
@@ -337,7 +336,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should handle mode switching', async () => {
       render(
         <TestWrapper>
-          <EnhancedViewerContainer 
+          <UnifiedDicomViewerComplete 
             study={mockStudy}
             showModeSelector={true}
           />
@@ -364,7 +363,7 @@ describe('Viewer Workflow Integration Tests', () => {
     test('should preserve state across mode switches', async () => {
       render(
         <TestWrapper>
-          <EnhancedViewerContainer 
+          <UnifiedDicomViewerComplete 
             study={mockStudy}
             showModeSelector={true}
           />
@@ -491,7 +490,7 @@ describe('Viewer Workflow Integration Tests', () => {
       // This tests error boundaries and graceful degradation
       render(
         <TestWrapper>
-          <EnhancedViewerContainer 
+          <UnifiedDicomViewerComplete 
             study={mockStudy}
             enableAutoOptimization={false}
           />

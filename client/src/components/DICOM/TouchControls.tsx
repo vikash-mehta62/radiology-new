@@ -3,7 +3,7 @@
  * Optimized for tablet use in radiology reading rooms with stylus support
  */
 
-import React, { useRef, useCallback, useEffect, useState } from 'react';
+import React, { useRef, useCallback, useEffect, useState, useMemo, startTransition } from 'react';
 import {
   Box, Paper, IconButton, Typography, Slider, Stack, Chip,
   useTheme, alpha, Tooltip, ButtonGroup, Switch, FormControlLabel
@@ -63,7 +63,9 @@ const TouchControls: React.FC<TouchControlsProps> = ({
 }) => {
   const theme = useTheme();
   const touchAreaRef = useRef<HTMLDivElement>(null);
-  const [touchState, setTouchState] = useState<TouchState>({
+  
+  // Initialize state with lazy initialization for React 19
+  const [touchState, setTouchState] = useState<TouchState>(() => ({
     isActive: false,
     startPosition: { x: 0, y: 0 },
     lastPosition: { x: 0, y: 0 },
@@ -73,38 +75,39 @@ const TouchControls: React.FC<TouchControlsProps> = ({
     gestureType: 'none',
     stylusMode: false,
     pressureSupported: false
-  });
+  }));
 
   const [controlsVisible, setControlsVisible] = useState(true);
   const [activeGesture, setActiveGesture] = useState<string>('pan');
 
-  // Apple HIG-inspired colors for medical imaging
-  const colors = {
+  // Memoize colors for React 19 performance
+  const colors = useMemo(() => ({
     primary: theme.palette.mode === 'dark' ? '#007AFF' : '#0066CC',
     secondary: theme.palette.mode === 'dark' ? '#5AC8FA' : '#34C759',
     surface: theme.palette.mode === 'dark' ? '#1C1C1E' : '#FFFFFF',
     surfaceVariant: theme.palette.mode === 'dark' ? '#2C2C2E' : '#F2F2F7',
     onSurface: theme.palette.mode === 'dark' ? '#FFFFFF' : '#000000',
     accent: theme.palette.mode === 'dark' ? '#FF9F0A' : '#FF9500'
-  };
+  }), [theme.palette.mode]);
 
-  // Detect stylus and pressure support
+  // Detect stylus and pressure support - React 19 optimized
   useEffect(() => {
     const checkStylusSupport = () => {
-      // Check for pointer events and pressure sensitivity
       const hasPointerEvents = 'PointerEvent' in window;
       const hasPressure = 'pressure' in (new PointerEvent('pointerdown') as any);
       
-      setTouchState(prev => ({
-        ...prev,
-        pressureSupported: hasPointerEvents && hasPressure
-      }));
+      startTransition(() => {
+        setTouchState(prev => ({
+          ...prev,
+          pressureSupported: hasPointerEvents && hasPressure
+        }));
+      });
     };
 
     checkStylusSupport();
   }, []);
 
-  // Touch event handlers with gesture recognition
+  // Touch event handlers with gesture recognition - React 19 optimized
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (!enableGestures) return;
 
@@ -116,16 +119,18 @@ const TouchControls: React.FC<TouchControlsProps> = ({
     const x = touch.clientX - rect.left;
     const y = touch.clientY - rect.top;
 
-    setTouchState(prev => ({
-      ...prev,
-      isActive: true,
-      startPosition: { x, y },
-      lastPosition: { x, y },
-      initialZoom: currentZoom,
-      initialPan: currentPan,
-      touchCount: touches.length,
-      gestureType: touches.length === 1 ? 'pan' : touches.length === 2 ? 'zoom' : 'none'
-    }));
+    startTransition(() => {
+      setTouchState(prev => ({
+        ...prev,
+        isActive: true,
+        startPosition: { x, y },
+        lastPosition: { x, y },
+        initialZoom: currentZoom,
+        initialPan: currentPan,
+        touchCount: touches.length,
+        gestureType: touches.length === 1 ? 'pan' : touches.length === 2 ? 'zoom' : 'none'
+      }));
+    });
 
     e.preventDefault();
   }, [enableGestures, currentZoom, currentPan]);
@@ -142,7 +147,6 @@ const TouchControls: React.FC<TouchControlsProps> = ({
     const y = touch.clientY - rect.top;
 
     if (touchState.gestureType === 'pan' && touches.length === 1) {
-      // Single finger pan
       const deltaX = x - touchState.lastPosition.x;
       const deltaY = y - touchState.lastPosition.y;
       
@@ -152,7 +156,6 @@ const TouchControls: React.FC<TouchControlsProps> = ({
           y: currentPan.y + deltaY
         });
       } else if (activeGesture === 'window') {
-        // Window/Level adjustment with single finger
         const windowDelta = deltaX * 10;
         const levelDelta = -deltaY * 5;
         onWindowLevel(
@@ -161,7 +164,6 @@ const TouchControls: React.FC<TouchControlsProps> = ({
         );
       }
     } else if (touchState.gestureType === 'zoom' && touches.length === 2) {
-      // Two finger pinch-to-zoom
       const touch2 = touches[1];
       const x2 = touch2.clientX - rect.left;
       const y2 = touch2.clientY - rect.top;
@@ -178,66 +180,116 @@ const TouchControls: React.FC<TouchControlsProps> = ({
       }
     }
 
-    setTouchState(prev => ({
-      ...prev,
-      lastPosition: { x, y }
-    }));
+    startTransition(() => {
+      setTouchState(prev => ({
+        ...prev,
+        lastPosition: { x, y }
+      }));
+    });
 
     e.preventDefault();
   }, [touchState, enableGestures, activeGesture, currentPan, currentWindowWidth, currentWindowCenter, onPan, onWindowLevel, onZoom]);
 
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    setTouchState(prev => ({
-      ...prev,
-      isActive: false,
-      gestureType: 'none',
-      touchCount: 0
-    }));
+    startTransition(() => {
+      setTouchState(prev => ({
+        ...prev,
+        isActive: false,
+        gestureType: 'none',
+        touchCount: 0
+      }));
+    });
 
     e.preventDefault();
   }, []);
 
-  // Stylus/Pointer event handlers
+  // Stylus/Pointer event handlers - React 19 optimized
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!enableStylus || e.pointerType !== 'pen') return;
 
-    setTouchState(prev => ({
-      ...prev,
-      stylusMode: true,
-      pressureSupported: 'pressure' in e && e.pressure > 0
-    }));
+    startTransition(() => {
+      setTouchState(prev => ({
+        ...prev,
+        stylusMode: true,
+        pressureSupported: 'pressure' in e && e.pressure > 0
+      }));
+    });
 
-    // Handle stylus-specific interactions
     if (e.pressure > 0.5) {
-      // High pressure - activate annotation mode
-      setActiveGesture('annotate');
+      startTransition(() => {
+        setActiveGesture('annotate');
+      });
     }
   }, [enableStylus]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!touchState.stylusMode || e.pointerType !== 'pen') return;
 
-    // Pressure-sensitive interactions
     if ('pressure' in e && e.pressure > 0) {
       const pressure = e.pressure;
       
       if (pressure > 0.7) {
         // High pressure - fine adjustments
-        // Implement precise windowing or measurement tools
       } else if (pressure > 0.3) {
         // Medium pressure - normal interaction
-        // Standard pan/zoom behavior
       }
     }
   }, [touchState.stylusMode]);
 
-  // Gesture shortcuts
-  const gestureButtons = [
+  // Memoize gesture buttons for React 19 performance
+  const gestureButtons = useMemo(() => [
     { id: 'pan', icon: <PanTool />, label: 'Pan', tooltip: 'Drag to move image' },
     { id: 'zoom', icon: <ZoomIn />, label: 'Zoom', tooltip: 'Pinch to zoom' },
     { id: 'window', icon: <Brightness6 />, label: 'Window', tooltip: 'Adjust window/level' },
     { id: 'rotate', icon: <RotateLeft />, label: 'Rotate', tooltip: 'Two-finger rotate' }
-  ];
+  ], []);
+
+  // Memoize zoom handlers for React 19 performance
+  const handleZoomOut = useCallback(() => {
+    onZoom(Math.max(0.1, currentZoom * 0.8));
+  }, [onZoom, currentZoom]);
+
+  const handleZoomIn = useCallback(() => {
+    onZoom(Math.min(5, currentZoom * 1.25));
+  }, [onZoom, currentZoom]);
+
+  const handleRotateLeft = useCallback(() => {
+    onRotate(currentRotation - 90);
+  }, [onRotate, currentRotation]);
+
+  const handleRotateRight = useCallback(() => {
+    onRotate(currentRotation + 90);
+  }, [onRotate, currentRotation]);
+
+  const handleReset = useCallback(() => {
+    onZoom(1);
+    onPan({ x: 0, y: 0 });
+    onRotate(0);
+  }, [onZoom, onPan, onRotate]);
+
+  const handleControlsToggle = useCallback(() => {
+    startTransition(() => {
+      setControlsVisible(prev => !prev);
+    });
+  }, []);
+
+  const handleGestureChange = useCallback((gestureId: string) => {
+    startTransition(() => {
+      setActiveGesture(gestureId);
+    });
+  }, []);
+
+  // Memoize touch area styles for React 19 performance
+  const touchAreaStyles = useMemo(() => ({
+    width: '100%',
+    height: '100%',
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    zIndex: 1,
+    cursor: touchState.isActive ? 'grabbing' : 'grab',
+    touchAction: 'none' as const,
+  }), [touchState.isActive]);
 
   return (
     <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -249,16 +301,7 @@ const TouchControls: React.FC<TouchControlsProps> = ({
         onTouchEnd={handleTouchEnd}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        sx={{
-          width: '100%',
-          height: '100%',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          zIndex: 1,
-          cursor: touchState.isActive ? 'grabbing' : 'grab',
-          touchAction: 'none', // Prevent default touch behaviors
-        }}
+        sx={touchAreaStyles}
       />
 
       {/* Floating Touch Controls */}
@@ -286,7 +329,7 @@ const TouchControls: React.FC<TouchControlsProps> = ({
               {gestureButtons.map((gesture) => (
                 <Tooltip key={gesture.id} title={gesture.tooltip}>
                   <IconButton
-                    onClick={() => setActiveGesture(gesture.id)}
+                    onClick={() => handleGestureChange(gesture.id)}
                     sx={{
                       backgroundColor: activeGesture === gesture.id ? colors.primary : 'transparent',
                       color: activeGesture === gesture.id ? 'white' : colors.onSurface,
@@ -310,10 +353,7 @@ const TouchControls: React.FC<TouchControlsProps> = ({
                 Zoom: {Math.round(currentZoom * 100)}%
               </Typography>
               <Stack direction="row" spacing={1} alignItems="center">
-                <IconButton
-                  size="small"
-                  onClick={() => onZoom(Math.max(0.1, currentZoom * 0.8))}
-                >
+                <IconButton size="small" onClick={handleZoomOut}>
                   <ZoomOut />
                 </IconButton>
                 <Slider
@@ -324,10 +364,7 @@ const TouchControls: React.FC<TouchControlsProps> = ({
                   onChange={(_, value) => onZoom(value as number)}
                   sx={{ flex: 1 }}
                 />
-                <IconButton
-                  size="small"
-                  onClick={() => onZoom(Math.min(5, currentZoom * 1.25))}
-                >
+                <IconButton size="small" onClick={handleZoomIn}>
                   <ZoomIn />
                 </IconButton>
               </Stack>
@@ -366,32 +403,28 @@ const TouchControls: React.FC<TouchControlsProps> = ({
             <Stack direction="row" spacing={1} justifyContent="space-between">
               <IconButton
                 size="small"
-                onClick={() => onRotate(currentRotation - 90)}
+                onClick={handleRotateLeft}
                 sx={{ backgroundColor: alpha(colors.onSurface, 0.08) }}
               >
                 <RotateLeft />
               </IconButton>
               <IconButton
                 size="small"
-                onClick={() => onRotate(currentRotation + 90)}
+                onClick={handleRotateRight}
                 sx={{ backgroundColor: alpha(colors.onSurface, 0.08) }}
               >
                 <RotateRight />
               </IconButton>
               <IconButton
                 size="small"
-                onClick={() => {
-                  onZoom(1);
-                  onPan({ x: 0, y: 0 });
-                  onRotate(0);
-                }}
+                onClick={handleReset}
                 sx={{ backgroundColor: alpha(colors.onSurface, 0.08) }}
               >
                 <RestartAlt />
               </IconButton>
               <IconButton
                 size="small"
-                onClick={() => setControlsVisible(false)}
+                onClick={handleControlsToggle}
                 sx={{ backgroundColor: alpha(colors.onSurface, 0.08) }}
               >
                 <VisibilityOff />
@@ -423,7 +456,7 @@ const TouchControls: React.FC<TouchControlsProps> = ({
       {/* Show Controls Button */}
       {!controlsVisible && (
         <IconButton
-          onClick={() => setControlsVisible(true)}
+          onClick={handleControlsToggle}
           sx={{
             position: 'absolute',
             bottom: 16,
@@ -457,4 +490,4 @@ const TouchControls: React.FC<TouchControlsProps> = ({
   );
 };
 
-export default TouchControls;
+export default React.memo(TouchControls);

@@ -1,12 +1,13 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ApiResponse } from '../types';
+import { environmentService } from '../config/environment';
 
 class ApiService {
   private client: AxiosInstance;
 
   constructor() {
     this.client = axios.create({
-      baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',  
+      baseURL: environmentService.getApiUrl(),  
       timeout: 60000, // Increased to 60 seconds for large file uploads
    
     });

@@ -132,11 +132,14 @@ class StudyController {
         try {
             const studyId = req.params.id;
 
-            // Validate MongoDB ObjectId
-            if (!studyId.match(/^[0-9a-fA-F]{24}$/)) {
+            // Validate study ID format (UUID or MongoDB ObjectId)
+            const isValidObjectId = studyId.match(/^[0-9a-fA-F]{24}$/);
+            const isValidUUID = studyId.match(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/i);
+            
+            if (!isValidObjectId && !isValidUUID) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Invalid study ID format'
+                    error: 'Invalid study ID format - must be UUID or MongoDB ObjectId'
                 });
             }
 
@@ -288,11 +291,14 @@ class StudyController {
         try {
             const studyId = req.params.id;
 
-            // Validate MongoDB ObjectId
-            if (!studyId.match(/^[0-9a-fA-F]{24}$/)) {
+            // Validate study ID format (UUID or MongoDB ObjectId)
+            const isValidObjectId = studyId.match(/^[0-9a-fA-F]{24}$/);
+            const isValidUUID = studyId.match(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/i);
+            
+            if (!isValidObjectId && !isValidUUID) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Invalid study ID format'
+                    error: 'Invalid study ID format - must be UUID or MongoDB ObjectId'
                 });
             }
 

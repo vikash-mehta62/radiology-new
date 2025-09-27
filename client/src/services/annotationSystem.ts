@@ -1387,6 +1387,22 @@ class AnnotationSystem {
     console.log('📝 [AnnotationSystem] Undid action:', lastEntry.action);
     return true;
   }
+
+  /**
+   * Dispose of the annotation system
+   */
+  public dispose(): void {
+    // Clear all data structures
+    this.annotations.clear();
+    this.layers.clear();
+    this.groups.clear();
+    this.templates.clear();
+    this.sessions.clear();
+    this.history = [];
+    this.activeSession = null;
+    
+    console.log('🧹 [AnnotationSystem] Disposed');
+  }
 }
 
 export { AnnotationSystem };

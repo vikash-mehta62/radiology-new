@@ -13,7 +13,7 @@ export interface DeviceHealthMetrics {
   device_name: string;
   device_type: string;
   timestamp: string;
-  status: 'online' | 'offline' | 'degraded' | 'unknown';
+  status: 'online' | 'offline' | 'unknown' | 'testing';
   connectivity: {
     response_time_ms: number;
     packet_loss_percent: number;
@@ -67,7 +67,7 @@ export interface NetworkDevice {
   device_type: 'medical_device' | 'network_switch' | 'router' | 'firewall' | 'server' | 'workstation';
   vendor?: string;
   model?: string;
-  status: 'online' | 'offline' | 'unknown';
+  status: 'online' | 'offline' | 'unknown' | 'testing' | 'degraded';
   last_seen: string;
   ports: NetworkPort[];
 }
@@ -321,11 +321,11 @@ class MedicalDeviceMonitoringService {
    * Test DICOM services availability
    */
   private async testDicomServices(device: DeviceRegistryEntry): Promise<DeviceHealthMetrics['dicom_services']> {
-    const services = {
-      c_echo_status: 'unavailable' as const,
-      c_find_status: 'unavailable' as const,
-      wado_status: 'unavailable' as const,
-      qido_status: 'unavailable' as const
+    const services: DeviceHealthMetrics['dicom_services'] = {
+      c_echo_status: 'unavailable',
+      c_find_status: 'unavailable',
+      wado_status: 'unavailable',
+      qido_status: 'unavailable'
     };
 
     try {
@@ -656,7 +656,7 @@ class MedicalDeviceMonitoringService {
     connectivity: DeviceHealthMetrics['connectivity'],
     services: DeviceHealthMetrics['dicom_services'],
     performance: DeviceHealthMetrics['performance']
-  ): 'online' | 'offline' | 'degraded' | 'unknown' {
+  ): 'online' | 'offline' | 'unknown' | 'testing' {
     if (connectivity.packet_loss_percent === 100) {
       return 'offline';
     }
@@ -664,7 +664,7 @@ class MedicalDeviceMonitoringService {
     if (connectivity.response_time_ms > 5000 || 
         Object.values(services).some(status => status === 'unavailable') ||
         performance.error_rate_percent > 10) {
-      return 'degraded';
+      return 'unknown'; // Changed from 'degraded' to 'unknown'
     }
     
     return 'online';

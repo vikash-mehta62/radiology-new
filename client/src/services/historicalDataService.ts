@@ -636,7 +636,7 @@ class HistoricalDataService {
 
   private generateForecast(
     dataPoints: TimeSeriesDataPoint[], 
-    regression: { slope: number; intercept: number }
+    regression: { slope: number; intercept: number; rSquared: number }
   ): TrendAnalysis['forecast'] {
     const lastIndex = dataPoints.length - 1;
     const confidence = Math.min(Math.abs(regression.rSquared), 0.95);

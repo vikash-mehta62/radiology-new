@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VTK.js DICOM Viewer Demo Instructions</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .status-badge {
+            display: inline-block;
+            background: #27ae60;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .step {
+            background: #f8f9fa;
+            border-left: 4px solid #3498db;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .step h3 {
+            color: #2980b9;
+            margin-top: 0;
+        }
+        .url-box {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .feature-card {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid #bdc3c7;
+        }
+        .feature-card h4 {
+            color: #34495e;
+            margin-top: 0;
+        }
+        .button-demo {
+            background: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        .button-demo.active {
+            background: #e74c3c;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .controls-demo {
+            background: #f1f2f6;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        .icon {
+            font-size: 1.2em;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 VTK.js DICOM Viewer Demo</h1>
+        
+        <div class="status-badge">
+            ✅ VTK.js v34.12.0 Ready | Backend Running | Test Data Available
+        </div>
+
+        <div class="success">
+            <strong>🎉 Great News!</strong> Your VTK.js integration is properly set up and ready to use. Follow the steps below to experience advanced 3D medical imaging capabilities.
+        </div>
+
+        <div class="step">
+            <h3>📋 Step 1: Open the DICOM Study Viewer</h3>
+            <p>Click the link below or copy-paste it into your browser:</p>
+            <div class="url-box">
+                <a href="http://localhost:3000/studies/63f79b62-ee15-45ef-bdde-507bd8f946fb" 
+                   target="_blank" style="color: #3498db; text-decoration: none;">
+                   http://localhost:3000/studies/63f79b62-ee15-45ef-bdde-507bd8f946fb
+                </a>
+            </div>
+            <p><strong>Test Study Details:</strong></p>
+            <ul>
+                <li>Patient ID: PAT_PALAK_57F5AE30</li>
+                <li>DICOM File: 5783.dcm</li>
+                <li>Study UID: 63f79b62-ee15-45ef-bdde-507bd8f946fb</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>🔄 Step 2: Enable VTK.js MPR Mode</h3>
+            <p>Look for the toolbar at the top of the viewer and find the MPR button:</p>
+            <div class="controls-demo">
+                <p><strong>Look for this button in the toolbar:</strong></p>
+                <button class="button-demo">
+                    <span class="icon">📐</span> MPR Mode (ViewInAr Icon)
+                </button>
+                <p>Click it to toggle between 2D canvas and VTK.js 3D rendering</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>🎮 Step 3: Explore VTK.js Features</h3>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h4>🔄 3D Volume Rendering</h4>
+                    <p>Interactive 3D visualization of DICOM data with real-time rotation, zoom, and pan capabilities.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>📊 Multi-Planar Reconstruction</h4>
+                    <p>Synchronized axial, sagittal, and coronal views with crosshair navigation.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>🎛️ Advanced Controls</h4>
+                    <p>Window/level adjustment, opacity control, and rendering mode selection.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>⚡ WebGL Performance</h4>
+                    <p>Hardware-accelerated rendering for smooth interaction with large datasets.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>🎯 Step 4: Test Interactive Controls</h3>
+            <p>Once MPR mode is enabled, you can:</p>
+            <ul>
+                <li><strong>Mouse Drag:</strong> Rotate the 3D volume</li>
+                <li><strong>Mouse Wheel:</strong> Zoom in/out</li>
+                <li><strong>Right Click + Drag:</strong> Pan the view</li>
+                <li><strong>Toolbar Controls:</strong> Adjust window/level, opacity, rendering mode</li>
+            </ul>
+            
+            <div class="controls-demo">
+                <p><strong>Additional MPR Controls:</strong></p>
+                <button class="button-demo">Single MPR</button>
+                <button class="button-demo active">Multi-Plane</button>
+                <p>Switch between single and multi-plane MPR views</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>🔧 Step 5: Performance Optimization</h3>
+            <p>For optimal VTK.js performance:</p>
+            <ul>
+                <li>Use Chrome or Firefox for best WebGL support</li>
+                <li>Ensure hardware acceleration is enabled</li>
+                <li>Close other browser tabs to free up GPU memory</li>
+                <li>Adjust rendering quality based on your hardware</li>
+            </ul>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ Troubleshooting:</strong> If VTK.js doesn't load properly:
+            <ul>
+                <li>Check browser console for WebGL errors</li>
+                <li>Verify backend server is running on port 8000</li>
+                <li>Ensure DICOM processing endpoint is accessible</li>
+                <li>Try refreshing the page or clearing browser cache</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>📚 Advanced Usage</h3>
+            <p>For detailed technical information, refer to:</p>
+            <div class="url-box">
+                VTK_USAGE_GUIDE.md - Comprehensive technical documentation
+            </div>
+            <p>This guide covers:</p>
+            <ul>
+                <li>Component architecture and API reference</li>
+                <li>Custom transfer functions and rendering modes</li>
+                <li>Performance optimization techniques</li>
+                <li>Integration with DICOM metadata</li>
+                <li>Advanced 3D visualization features</li>
+            </ul>
+        </div>
+
+        <div class="success">
+            <strong>🚀 Ready to Explore!</strong> Your VTK.js integration provides professional-grade 3D medical imaging capabilities. Click the study link above and enable MPR mode to experience the full power of VTK.js in your DICOM viewer.
+        </div>
+
+        <div style="text-align: center; margin-top: 40px; color: #7f8c8d;">
+            <p>VTK.js Integration Demo | Radiology DICOM Viewer</p>
+            <p>WebGL-Powered 3D Medical Imaging</p>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactivity to the demo buttons
+        document.querySelectorAll('.button-demo').forEach(button => {
+            button.addEventListener('click', function() {
+                // Remove active class from siblings
+                this.parentNode.querySelectorAll('.button-demo').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                // Add active class to clicked button
+                this.classList.add('active');
+            });
+        });
+
+        // Auto-open the study viewer link
+        setTimeout(() => {
+            const studyLink = document.querySelector('a[href*="localhost:3000"]');
+            if (studyLink && confirm('Would you like to open the DICOM study viewer now?')) {
+                window.open(studyLink.href, '_blank');
+            }
+        }, 2000);
+    </script>
+</body>
+</html>
