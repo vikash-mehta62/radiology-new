@@ -112,22 +112,43 @@ const findDicomFile = async (patient_id, requestedFilename) => {
     'study.dcm'
   ];
   
-  // First try to find study by original filename
-  let study = await Study.findOne({ 
-    patient_id: patient_id,
-    original_filename: requestedFilename 
-  });
+  let study = null;
   
-  // If not found, try to find any study for this patient
-  if (!study) {
-    study = await Study.findOne({ patient_id: patient_id });
+  try {
+    // First try to find study by original filename
+    study = await Study.findOne({ 
+      patient_id: patient_id,
+      original_filename: requestedFilename 
+    });
+    
+    // If not found, try to find any study for this patient
+    if (!study) {
+      study = await Study.findOne({ patient_id: patient_id });
+    }
+  } catch (dbError) {
+    console.log(`Database not available, proceeding with file-based lookup: ${dbError.message}`);
   }
   
   // Try each possible filename
   for (const filename of possibleFilenames) {
     const filePath = path.join(__dirname, '..', 'uploads', patient_id, filename);
+    console.log(`Checking file path: ${filePath}`);
+    console.log(`__dirname: ${__dirname}`);
+    console.log(`File exists: ${fs.existsSync(filePath)}`);
+    
     if (fs.existsSync(filePath)) {
       console.log(`Found DICOM file: ${filePath}`);
+      
+      // Create a mock study object if database is not available
+      if (!study) {
+        study = {
+          patient_id: patient_id,
+          original_filename: filename,
+          study_uid: `mock-study-${patient_id}`,
+          created_at: new Date()
+        };
+      }
+      
       return { study, filePath, actualFilename: filename };
     }
   }
@@ -345,10 +366,183 @@ router.get('/convert/:patient_id/:filename', async (req, res) => {
   }
 });
 
+/**
+ * Extract raw pixel data from DICOM file for client-side rendering
+ */
+async function extractRawPixelData(dicomFilePath, frame = 0, windowCenter = null, windowWidth = null) {
+  return new Promise((resolve, reject) => {
+    console.log(`🔬 [extractRawPixelData] Processing: ${dicomFilePath}, frame: ${frame}`);
+
+    // Prepare arguments for Python script
+    const args = [
+      path.join(__dirname, '../python/dicomHelper.py'),
+      dicomFilePath,
+      '--mode', 'raw_pixels',
+      '--frame', frame.toString()
+    ];
+
+    // Add windowing parameters if provided
+    if (windowCenter !== null && windowWidth !== null) {
+      args.push('--window-center', windowCenter.toString());
+      args.push('--window-width', windowWidth.toString());
+    }
+
+    console.log(`🐍 [extractRawPixelData] Python command: python ${args.join(' ')}`);
+
+    const pythonProcess = spawn('python', args);
+    
+    let stdoutData = Buffer.alloc(0);
+    let stderrData = '';
+    let metadataReceived = false;
+    let metadata = {};
+
+    pythonProcess.stdout.on('data', (data) => {
+      if (!metadataReceived) {
+        // First chunk should contain JSON metadata followed by binary data
+        const dataStr = data.toString();
+        const metadataEndIndex = dataStr.indexOf('\n---PIXEL_DATA_START---\n');
+        
+        if (metadataEndIndex !== -1) {
+          try {
+            const metadataStr = dataStr.substring(0, metadataEndIndex);
+            metadata = JSON.parse(metadataStr);
+            metadataReceived = true;
+            
+            // Extract binary data after metadata
+            const binaryStartIndex = metadataEndIndex + '\n---PIXEL_DATA_START---\n'.length;
+            const binaryData = data.slice(Buffer.byteLength(dataStr.substring(0, binaryStartIndex)));
+            stdoutData = Buffer.concat([stdoutData, binaryData]);
+            
+            console.log(`📊 [extractRawPixelData] Metadata received: ${metadata.width}x${metadata.height}, ${metadata.pixel_format}`);
+          } catch (error) {
+            console.error('❌ [extractRawPixelData] Failed to parse metadata:', error);
+          }
+        } else {
+          // Still waiting for complete metadata
+          stdoutData = Buffer.concat([stdoutData, data]);
+        }
+      } else {
+        // Accumulate binary pixel data
+        stdoutData = Buffer.concat([stdoutData, data]);
+      }
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      stderrData += data.toString();
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`❌ [extractRawPixelData] Python process failed with code ${code}`);
+        console.error(`❌ [extractRawPixelData] stderr: ${stderrData}`);
+        resolve({
+          success: false,
+          error: `Python process failed: ${stderrData}`
+        });
+        return;
+      }
+
+      if (!metadataReceived) {
+        console.error('❌ [extractRawPixelData] No metadata received from Python process');
+        resolve({
+          success: false,
+          error: 'No metadata received from Python process'
+        });
+        return;
+      }
+
+      console.log(`✅ [extractRawPixelData] Successfully extracted ${stdoutData.length} bytes of pixel data`);
+
+      resolve({
+        success: true,
+        buffer: stdoutData,
+        width: metadata.width,
+        height: metadata.height,
+        pixelFormat: metadata.pixel_format,
+        bitsAllocated: metadata.bits_allocated,
+        photometricInterpretation: metadata.photometric_interpretation,
+        windowCenter: metadata.window_center,
+        windowWidth: metadata.window_width
+      });
+    });
+
+    pythonProcess.on('error', (error) => {
+      console.error('❌ [extractRawPixelData] Python process error:', error);
+      resolve({
+        success: false,
+        error: `Python process error: ${error.message}`
+      });
+    });
+  });
+}
+
+// Raw pixel data endpoint for client-side rendering (performance optimization)
+router.get('/pixels/:patient_id/:filename', async (req, res) => {
+  try {
+    const { patient_id, filename } = req.params;
+    const frame = parseInt(req.query.frame) || 0;
+    const windowCenter = parseFloat(req.query.windowCenter) || null;
+    const windowWidth = parseFloat(req.query.windowWidth) || null;
+
+    console.log(`🔬 [DICOM Pixels] Processing raw pixel data for ${patient_id}/${filename}, frame: ${frame}`);
+
+    // Find the DICOM file
+    const { study, filePath, actualFilename } = await findDicomFile(patient_id, filename);
+    if (!filePath) {
+      return res.status(404).json({
+        success: false,
+        message: `DICOM file not found: ${patient_id}/${filename}`
+      });
+    }
+
+    console.log(`📁 [DICOM Pixels] Found DICOM file: ${filePath}`);
+
+    // Extract raw pixel data using Python helper
+    const pixelData = await extractRawPixelData(filePath, frame, windowCenter, windowWidth);
+    
+    if (!pixelData.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to extract pixel data',
+        error: pixelData.error
+      });
+    }
+
+    // Set headers for binary data transfer
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': pixelData.buffer.length,
+      'X-Image-Width': pixelData.width.toString(),
+      'X-Image-Height': pixelData.height.toString(),
+      'X-Pixel-Format': pixelData.pixelFormat || 'uint16',
+      'X-Window-Center': pixelData.windowCenter?.toString() || 'auto',
+      'X-Window-Width': pixelData.windowWidth?.toString() || 'auto',
+      'X-Bits-Allocated': pixelData.bitsAllocated?.toString() || '16',
+      'X-Photometric-Interpretation': pixelData.photometricInterpretation || 'MONOCHROME2',
+      'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+      'Access-Control-Expose-Headers': 'X-Image-Width, X-Image-Height, X-Pixel-Format, X-Window-Center, X-Window-Width, X-Bits-Allocated, X-Photometric-Interpretation'
+    });
+
+    console.log(`✅ [DICOM Pixels] Sending raw pixel data: ${pixelData.width}x${pixelData.height}, ${pixelData.buffer.length} bytes`);
+
+    // Send raw pixel data as binary
+    res.send(pixelData.buffer);
+
+  } catch (error) {
+    console.error('❌ [DICOM Pixels] Error processing pixel data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error processing pixel data',
+      error: error.message
+    });
+  }
+});
+
 router.get('/png/:patient_id/:filename', async (req, res) => {
   try {
     const { patient_id, filename } = req.params;
     const sliceIndex = parseInt(req.query.slice) || 0;
+    const frame = parseInt(req.query.frame) || sliceIndex; // Support both slice and frame parameters
     
     // Find the DICOM file with fallback mechanism
     const { study, filePath, actualFilename } = await findDicomFile(patient_id, filename);
@@ -363,8 +557,8 @@ router.get('/png/:patient_id/:filename', async (req, res) => {
     // Create PNG cache directory
     const pngCacheDir = path.join(__dirname, '..', 'cache', 'png');
     
-    // Convert DICOM to PNG
-    const result = await convertDicomToPng(filePath, pngCacheDir, sliceIndex);
+    // Convert DICOM to PNG with optimized caching
+    const result = await convertDicomToPng(filePath, pngCacheDir, frame);
     
     if (!result.success) {
       return res.status(500).json({
@@ -374,22 +568,42 @@ router.get('/png/:patient_id/:filename', async (req, res) => {
       });
     }
 
-    // Serve the PNG file directly
+    // Serve the PNG file directly with optimized headers
     const pngPath = result.png_path;
     
-    // Set appropriate headers for PNG serving
+    // Performance-optimized headers
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable'); // Aggressive caching
     res.setHeader('X-Cached', result.cached ? 'true' : 'false');
+    res.setHeader('X-Frame-Index', frame.toString());
+    res.setHeader('X-Patient-ID', patient_id);
+    res.setHeader('Accept-Ranges', 'bytes'); // Enable range requests for better performance
     
-    // Send the PNG file
-    res.sendFile(path.resolve(pngPath), (err) => {
+    // Add ETag for better caching
+    const fs = require('fs');
+    const stats = fs.statSync(pngPath);
+    const etag = `"${stats.mtime.getTime()}-${stats.size}"`;
+    res.setHeader('ETag', etag);
+    
+    // Check if client has cached version
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    
+    // Send the PNG file with error handling
+    res.sendFile(path.resolve(pngPath), {
+      maxAge: 86400000, // 24 hours in milliseconds
+      immutable: true,
+      lastModified: false // We use ETag instead
+    }, (err) => {
       if (err) {
         console.error('Error serving PNG file:', err);
-        res.status(500).json({
-          success: false,
-          error: 'Failed to serve PNG file'
-        });
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Failed to serve PNG file'
+          });
+        }
       }
     });
     

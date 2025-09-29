@@ -25,9 +25,11 @@ import { LODRenderingService } from '../../../services/lodRenderingService';
 import { MemoryManager } from '../../../services/memoryManager';
 import { ShaderOptimizer } from '../../../services/shaderOptimizer';
 import { MemoryMonitor } from '../../../utils/memoryMonitor';
+import { webGPUService } from '../../../services/webGPUService';
 
 export interface ServiceManagerConfig {
   enableWebGL?: boolean;
+  enableWebGPU?: boolean;
   enableProgressiveLoading?: boolean;
   enableCaching?: boolean;
   adaptiveQuality?: boolean;
@@ -57,6 +59,7 @@ export interface ServiceManagerServices {
   memoryManager: MemoryManager | null;
   shaderOptimizer: ShaderOptimizer | null;
   memoryMonitor: MemoryMonitor | null;
+  webGPUService: typeof webGPUService | null;
 }
 
 export interface ServiceManagerContextType {
@@ -104,7 +107,8 @@ const ServiceManager: React.FC<ServiceManagerProps> = ({
     lodRendering: null,
     memoryManager: null,
     shaderOptimizer: null,
-    memoryMonitor: null
+    memoryMonitor: null,
+    webGPUService: null
   });
 
   const [isInitialized, setIsInitialized] = React.useState(false);
@@ -284,6 +288,18 @@ const ServiceManager: React.FC<ServiceManagerProps> = ({
       }
       updateProgress();
 
+      // Initialize WebGPU Service
+      if (config.enableWebGPU && !services.webGPUService) {
+        try {
+          await webGPUService.initialize();
+          services.webGPUService = webGPUService;
+          console.log('✅ [ServiceManager] WebGPU Service initialized');
+        } catch (error) {
+          console.warn('⚠️ [ServiceManager] WebGPU initialization failed, falling back to WebGL:', error.message);
+        }
+      }
+      updateProgress();
+
       setIsInitialized(true);
       setInitializationProgress(100);
       console.log('🎉 [ServiceManager] All services initialized successfully');
@@ -302,6 +318,7 @@ const ServiceManager: React.FC<ServiceManagerProps> = ({
     const services = servicesRef.current;
     
     // Cleanup in reverse order of initialization
+    services.webGPUService?.dispose?.();
     services.lodRendering?.dispose();
     services.predictiveCache?.dispose();
     services.abnormalityDetection?.dispose();

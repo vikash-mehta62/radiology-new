@@ -68,7 +68,7 @@ import {
 } from '@mui/icons-material';
 
 // Services
-import { Cornerstone3DService } from '../../../services/cornerstone3DService';
+import cornerstone3DService from '../../../services/cornerstone3DService';
 import { enhancedDicomService } from '../../../services/enhancedDicomService';
 import { performanceMonitor } from '../../../services/performanceMonitor';
 
@@ -347,7 +347,7 @@ const VolumeRenderer = forwardRef<VolumeRendererRef, VolumeRendererProps>(({
 
     try {
       // Initialize Cornerstone3D rendering engine
-      const renderingEngine = await Cornerstone3DService.createRenderingEngine('volumeRenderer');
+      const renderingEngine = await cornerstone3DService.createRenderingEngine('volumeRenderer');
       renderingEngineRef.current = renderingEngine;
 
       // Create viewport
@@ -384,7 +384,7 @@ const VolumeRenderer = forwardRef<VolumeRendererRef, VolumeRendererProps>(({
       setLoadingProgress(30);
 
       // Create volume
-      const volume = await Cornerstone3DService.createVolume({
+      const volume = await cornerstone3DService.createVolume({
         volumeId: `volume_${seriesInstanceUID}`,
         imageIds: seriesData.imageIds
       });

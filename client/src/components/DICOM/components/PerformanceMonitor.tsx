@@ -306,16 +306,17 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
     newMetrics.recommendations = generateRecommendations(newMetrics);
     
     startTransition(() => {
-      setMetrics(newMetrics);
+      setMetrics(prevMetrics => {
+        // Check for memory pressure changes before updating
+        if (memory.pressure !== prevMetrics.memoryPressure) {
+          onMemoryPressure(memory.pressure);
+        }
+        return newMetrics;
+      });
     });
     
     // Notify parent components
     onPerformanceUpdate(newMetrics);
-    
-    // Check for memory pressure changes
-    if (memory.pressure !== metrics.memoryPressure) {
-      onMemoryPressure(memory.pressure);
-    }
     
     // Schedule next update
     animationFrameRef.current = requestAnimationFrame(updateMetrics);
@@ -327,8 +328,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
     generateRecommendations,
     onPerformanceUpdate,
     onMemoryPressure,
-    state.cacheHit,
-    metrics.memoryPressure
+    state.cacheHit
   ]);
   
   // Initialize performance monitoring

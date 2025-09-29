@@ -11,6 +11,7 @@ const studiesRouter = require('./routes/studies');
 const debugRouter = require('./routes/debug');
 const uploadsRouter = require('./routes/uploads');
 const dicomProcessingRoutes = require('./routes/dicomProcessing');
+const wadoRSRoutes = require('./routes/wadoRS');
 const reportsRouter = require('./routes/reports');
 const auditRouter = require('./routes/audit');
 const nestedFoldersRouter = require('./routes/nestedFolders');
@@ -50,14 +51,29 @@ app.use('/slices', express.static(path.join(__dirname, 'slices')));
 app.use('/cache', express.static(path.join(__dirname, 'cache')));
 
 // Routes - API routes with /api prefix
-app.use('/patients', patientsRouter);
+app.use('/api/patients', patientsRouter);
 app.use('/studies', studiesRouter);
-app.use('/debug', debugRouter);
-app.use('/uploads', uploadsRouter);
-app.use('/dicom', dicomProcessingRoutes);
+app.use('/api/debug', debugRouter);
+app.use('/api/uploads', uploadsRouter);
+app.use('/api/dicom', dicomProcessingRoutes);
+app.use('/rs', wadoRSRoutes); // WADO-RS compliant endpoints
 app.use('/api/reports', reportsRouter);
 app.use('/api/audit', auditRouter);
-app.use('/nested-folders', nestedFoldersRouter);
+app.use('/api/nested-folders', nestedFoldersRouter);
+
+// Bandwidth test endpoint for progressive loading
+app.get('/api/bandwidth-test', (req, res) => {
+  const size = parseInt(req.query.size) || 1024;
+  const testData = Buffer.alloc(size, 'A'); // Create test data of specified size
+  
+  res.set({
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': size.toString(),
+    'Cache-Control': 'no-cache'
+  });
+  
+  res.send(testData);
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {

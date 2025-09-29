@@ -38,6 +38,7 @@ const DeviceDiscovery = lazy(() => import('./pages/DeviceDiscovery'));
 const EnhancedViewerTestPage = lazy(() => import('./pages/EnhancedViewerTestPage'));
 const UnifiedViewerTest = lazy(() => import('./components/DICOM/UnifiedViewerTest'));
 const FinalDicomViewerDemo = lazy(() => import('./pages/FinalDicomViewerDemo'));
+const RawPixelTestPage = lazy(() => import('./components/DICOM/test/RawPixelTestPage'));
 
 // Theme is now handled by ThemeProvider context
 
@@ -74,7 +75,7 @@ function App() {
     };
   }, []);
 
-  if (isLoading && !isDevelopment) {
+  if (isLoading) {
     return <LoadingScreen />;
   }
 
@@ -302,6 +303,18 @@ function App() {
                     element={
                       shouldAuthenticate ? (
                         <FinalDicomViewerDemo />
+                      ) : (
+                        <Navigate to="/login" replace />
+                      )
+                    } 
+                  />
+                  
+                  {/* Raw Pixel Data Test Page - Web Worker Based Rendering */}
+                  <Route 
+                    path="/raw-pixel-test" 
+                    element={
+                      shouldAuthenticate ? (
+                        <RawPixelTestPage />
                       ) : (
                         <Navigate to="/login" replace />
                       )

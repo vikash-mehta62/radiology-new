@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -46,52 +46,85 @@ import {
 import UnifiedDicomViewer, { UnifiedDicomViewerRef } from './unifieddicomviewer';
 import type { Study } from '../../types';
 
-// Mock DICOM study data for testing
-const mockStudy: Study = {
-  studyInstanceUID: '1.2.840.113619.2.5.1762583153.215519.978957063.78',
-  studyDate: '20240115',
-  studyTime: '143022',
-  studyDescription: 'CT CHEST W/O CONTRAST',
-  patientName: 'Test^Patient^DICOM',
-  patientId: 'TEST001',
-  patientBirthDate: '19850315',
-  patientSex: 'M',
-  accessionNumber: 'ACC001',
-  modality: 'CT',
-  numberOfSeries: 3,
-  numberOfInstances: 150,
-  institutionName: 'Test Hospital',
-  referringPhysicianName: 'Dr. Test',
-  studyId: 'STUDY001',
-  seriesData: [
-    {
-      seriesInstanceUID: '1.2.840.113619.2.5.1762583153.215519.978957063.79',
-      seriesNumber: 1,
-      seriesDescription: 'Axial CT',
-      modality: 'CT',
-      numberOfInstances: 50,
-      bodyPartExamined: 'CHEST',
-      imageIds: Array.from({ length: 50 }, (_, i) => `dicomweb://localhost:8000/studies/${mockStudy.studyInstanceUID}/series/1.2.840.113619.2.5.1762583153.215519.978957063.79/instances/${i + 1}/frames/1`)
-    },
-    {
-      seriesInstanceUID: '1.2.840.113619.2.5.1762583153.215519.978957063.80',
-      seriesNumber: 2,
-      seriesDescription: 'Sagittal CT',
-      modality: 'CT',
-      numberOfInstances: 50,
-      bodyPartExamined: 'CHEST',
-      imageIds: Array.from({ length: 50 }, (_, i) => `dicomweb://localhost:8000/studies/${mockStudy.studyInstanceUID}/series/1.2.840.113619.2.5.1762583153.215519.978957063.80/instances/${i + 1}/frames/1`)
-    },
-    {
-      seriesInstanceUID: '1.2.840.113619.2.5.1762583153.215519.978957063.81',
-      seriesNumber: 3,
-      seriesDescription: 'Coronal CT',
-      modality: 'CT',
-      numberOfInstances: 50,
-      bodyPartExamined: 'CHEST',
-      imageIds: Array.from({ length: 50 }, (_, i) => `dicomweb://localhost:8000/studies/${mockStudy.studyInstanceUID}/series/1.2.840.113619.2.5.1762583153.215519.978957063.81/instances/${i + 1}/frames/1`)
+// Dynamic DICOM metadata fetching function
+const fetchDicomMetadata = async (patientId: string, filename: string) => {
+  try {
+    console.log(`🔍 Fetching metadata for ${patientId}/${filename}`);
+    const response = await fetch(`http://localhost:8000/dicom/process/${patientId}/${filename}?auto_detect=true&frame=0`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch metadata: ${response.statusText}`);
     }
-  ]
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(`Backend error: ${data.error}`);
+    }
+    
+    console.log(`📊 Metadata fetched:`, {
+      totalSlices: data.total_slices,
+      autoDetectionInfo: data.auto_detection_info
+    });
+    
+    return {
+      totalSlices: data.total_slices || 1,
+      metadata: data.metadata,
+      autoDetectionInfo: data.auto_detection_info
+    };
+  } catch (error) {
+    console.error(`❌ Error fetching metadata for ${patientId}/${filename}:`, error);
+    return {
+      totalSlices: 1,
+      metadata: null,
+      autoDetectionInfo: null
+    };
+  }
+};
+
+// Generate dynamic imageIds based on actual frame count
+const generateDynamicImageIds = (patientId: string, filename: string, totalFrames: number) => {
+  return Array.from({ length: totalFrames }, (_, i) => 
+    `dicomweb://localhost:8000/rs/studies/${patientId}/instances/${filename}/frames/${i + 1}`
+  );
+};
+
+// Create dynamic mock study with real PAT_VIKASH_7F64CCAA data
+const createDynamicMockStudy = async (): Promise<Study> => {
+  // Fetch metadata for PAT_VIKASH_7F64CCAA
+  const metadata = await fetchDicomMetadata('PAT_VIKASH_7F64CCAA', '0002.DCM');
+  
+  const dynamicStudy: Study = {
+    studyInstanceUID: 'PAT_VIKASH_7F64CCAA',
+    studyDate: '20240115',
+    studyTime: '143022',
+    studyDescription: 'Multi-slice DICOM Test (Dynamic)',
+    patientName: 'VIKASH^TEST^PATIENT',
+    patientId: 'PAT_VIKASH_7F64CCAA',
+    patientBirthDate: '19850315',
+    patientSex: 'M',
+    accessionNumber: 'ACC_VIKASH',
+    modality: 'CT',
+    numberOfSeries: 1,
+    numberOfInstances: metadata.totalSlices,
+    institutionName: 'Test Hospital',
+    referringPhysicianName: 'Dr. Test',
+    studyId: 'STUDY_VIKASH',
+    seriesData: [
+      {
+        seriesInstanceUID: '1.2.840.113619.2.5.1762583153.215519.978957063.79',
+        seriesNumber: 1,
+        seriesDescription: `Multi-slice CT (${metadata.totalSlices} frames)`,
+        modality: 'CT',
+        numberOfInstances: metadata.totalSlices,
+        bodyPartExamined: 'CHEST',
+        imageIds: generateDynamicImageIds('PAT_VIKASH_7F64CCAA', '0002.DCM', metadata.totalSlices)
+      }
+    ]
+  };
+  
+  console.log(`✅ Created dynamic mock study with ${metadata.totalSlices} frames`);
+  return dynamicStudy;
 };
 
 interface TestResult {
@@ -106,6 +139,55 @@ const UnifiedViewerTest: React.FC = () => {
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [isTestingRunning, setIsTestingRunning] = useState(false);
   const [currentTest, setCurrentTest] = useState<string>('');
+  const [dynamicStudy, setDynamicStudy] = useState<Study | null>(null);
+  const [isLoadingStudy, setIsLoadingStudy] = useState(true);
+  
+  // Load dynamic study on component mount
+  useEffect(() => {
+    const loadDynamicStudy = async () => {
+      try {
+        setIsLoadingStudy(true);
+        const study = await createDynamicMockStudy();
+        setDynamicStudy(study);
+        console.log('🎯 Dynamic study loaded successfully:', study);
+      } catch (error) {
+        console.error('❌ Failed to load dynamic study:', error);
+        // Fallback to a basic study structure
+        setDynamicStudy({
+          studyInstanceUID: 'PAT_VIKASH_7F64CCAA',
+          studyDate: '20240115',
+          studyTime: '143022',
+          studyDescription: 'Multi-slice DICOM Test (Fallback)',
+          patientName: 'VIKASH^TEST^PATIENT',
+          patientId: 'PAT_VIKASH_7F64CCAA',
+          patientBirthDate: '19850315',
+          patientSex: 'M',
+          accessionNumber: 'ACC_VIKASH',
+          modality: 'CT',
+          numberOfSeries: 1,
+          numberOfInstances: 1,
+          institutionName: 'Test Hospital',
+          referringPhysicianName: 'Dr. Test',
+          studyId: 'STUDY_VIKASH',
+          seriesData: [
+            {
+              seriesInstanceUID: '1.2.840.113619.2.5.1762583153.215519.978957063.79',
+              seriesNumber: 1,
+              seriesDescription: 'Multi-slice CT (Fallback)',
+              modality: 'CT',
+              numberOfInstances: 1,
+              bodyPartExamined: 'CHEST',
+              imageIds: ['dicomweb://localhost:8000/rs/studies/PAT_VIKASH_7F64CCAA/instances/0002.DCM/frames/1']
+            }
+          ]
+        });
+      } finally {
+        setIsLoadingStudy(false);
+      }
+    };
+
+    loadDynamicStudy();
+  }, []);
   
   // Viewer configuration for testing
   const [viewerConfig, setViewerConfig] = useState({
@@ -140,7 +222,8 @@ const UnifiedViewerTest: React.FC = () => {
       name: 'Study Loading',
       test: async () => {
         if (!viewerRef.current) throw new Error('Viewer not available');
-        await viewerRef.current.loadStudy(mockStudy);
+        if (!dynamicStudy) throw new Error('Dynamic study not loaded');
+        await viewerRef.current.loadStudy(dynamicStudy);
       }
     },
     {
@@ -270,6 +353,18 @@ const UnifiedViewerTest: React.FC = () => {
           DICOM Viewer Test Suite
         </Typography>
         
+        {isLoadingStudy && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            🔄 Loading dynamic DICOM study...
+          </Alert>
+        )}
+        
+        {dynamicStudy && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            ✅ Dynamic study loaded: {dynamicStudy.numberOfInstances} frames
+          </Alert>
+        )}
+        
         <Divider sx={{ my: 2 }} />
         
         {/* Configuration */}
@@ -361,10 +456,10 @@ const UnifiedViewerTest: React.FC = () => {
             variant="contained"
             startIcon={<PlayArrow />}
             onClick={runTests}
-            disabled={isTestingRunning}
+            disabled={isTestingRunning || isLoadingStudy || !dynamicStudy}
             fullWidth
           >
-            {isTestingRunning ? 'Running Tests...' : 'Run All Tests'}
+            {isTestingRunning ? 'Running Tests...' : isLoadingStudy ? 'Loading Study...' : 'Run All Tests'}
           </Button>
           
           {currentTest && (
@@ -423,25 +518,33 @@ const UnifiedViewerTest: React.FC = () => {
       
       {/* Viewer */}
       <Box sx={{ flex: 1 }}>
-        <UnifiedDicomViewer
-          ref={viewerRef}
-          study={mockStudy}
-          userRole={viewerConfig.userRole}
-          enableWebGL={viewerConfig.enableWebGL}
-          enableWebGPU={viewerConfig.enableWebGPU}
-          enableAdvancedTools={viewerConfig.enableAdvancedTools}
-          enableAI={viewerConfig.enableAI}
-          enableSecurity={viewerConfig.enableSecurity}
-          enablePerformanceMonitoring={viewerConfig.enablePerformanceMonitoring}
-          enableMultiViewport={viewerConfig.enableMultiViewport}
-          enableCollaboration={viewerConfig.enableCollaboration}
-          targetFrameRate={viewerConfig.targetFrameRate}
-          maxMemoryUsage={viewerConfig.maxMemoryUsage}
-          defaultLayout={viewerConfig.layout}
-          onPerformanceUpdate={setPerformanceMetrics}
-          onSecurityEvent={(event) => setSecurityEvents(prev => [...prev, event])}
-          onError={(error) => console.error('Viewer Error:', error)}
-        />
+        {dynamicStudy ? (
+          <UnifiedDicomViewer
+            ref={viewerRef}
+            study={dynamicStudy}
+            userRole={viewerConfig.userRole}
+            enableWebGL={viewerConfig.enableWebGL}
+            enableWebGPU={viewerConfig.enableWebGPU}
+            enableAdvancedTools={viewerConfig.enableAdvancedTools}
+            enableAI={viewerConfig.enableAI}
+            enableSecurity={viewerConfig.enableSecurity}
+            enablePerformanceMonitoring={viewerConfig.enablePerformanceMonitoring}
+            enableMultiViewport={viewerConfig.enableMultiViewport}
+            enableCollaboration={viewerConfig.enableCollaboration}
+            targetFrameRate={viewerConfig.targetFrameRate}
+            maxMemoryUsage={viewerConfig.maxMemoryUsage}
+            defaultLayout={viewerConfig.layout}
+            onPerformanceUpdate={setPerformanceMetrics}
+            onSecurityEvent={(event) => setSecurityEvents(prev => [...prev, event])}
+            onError={(error) => console.error('Viewer Error:', error)}
+          />
+        ) : (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <Typography variant="h6" color="text.secondary">
+              {isLoadingStudy ? 'Loading DICOM study...' : 'Failed to load DICOM study'}
+            </Typography>
+          </Box>
+        )}
       </Box>
     </Box>
   );

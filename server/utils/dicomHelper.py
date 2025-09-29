@@ -43,6 +43,182 @@ def extract_dicom_slices(file_path, output_format='PNG', max_slices=None):
             'image_position_patient': dicom_value_to_json(getattr(ds, 'ImagePositionPatient', None)),
             'image_orientation_patient': dicom_value_to_json(getattr(ds, 'ImageOrientationPatient', None)),
         }
+
+        slices = []
+        
+        # Process pixel data if available
+        if hasattr(ds, 'pixel_array'):
+            pixel_array = ds.pixel_array
+            
+            # Advanced slice detection algorithm
+            detected_slices = detect_slice_count(pixel_array, ds)
+            total_slices = detected_slices['total_slices']
+            slice_type = detected_slices['slice_type']
+            
+            # Update metadata with detection results
+            metadata.update({
+                'total_slices': total_slices,
+                'is_multi_slice': total_slices > 1,
+                'slice_detection_method': detected_slices['detection_method'],
+                'slice_type': slice_type,
+                'auto_detected': True
+            })
+            
+            # Determine how many slices to process
+            if max_slices is None:
+                # Process all slices automatically
+                num_slices_to_process = total_slices
+                metadata['processing_mode'] = 'auto_all_slices'
+            else:
+                # Respect max_slices limit for backward compatibility
+                num_slices_to_process = min(total_slices, max_slices)
+                metadata['processing_mode'] = 'limited_slices'
+                metadata['max_slices_requested'] = max_slices
+            
+            # Process slices based on detected structure
+            if slice_type == 'multi_frame_3d':
+                # 3D multi-frame DICOM (shape: [slices, height, width])
+                for i in range(num_slices_to_process):
+                    slice_data = pixel_array[i]
+                    image_b64 = convert_to_image(slice_data, output_format)
+                    if image_b64:
+                        slices.append({
+                            'slice_number': i,
+                            'image_data': image_b64,
+                            'format': output_format,
+                            'slice_location': get_slice_location(ds, i),
+                            'slice_position': get_slice_position(ds, i)
+                        })
+                        
+            elif slice_type == 'multi_frame_4d':
+                # 4D DICOM (shape: [time, slices, height, width] or similar)
+                # Process first time frame for now
+                time_frame = 0
+                for i in range(num_slices_to_process):
+                    slice_data = pixel_array[time_frame, i] if len(pixel_array.shape) == 4 else pixel_array[i]
+                    image_b64 = convert_to_image(slice_data, output_format)
+                    if image_b64:
+                        slices.append({
+                            'slice_number': i,
+                            'image_data': image_b64,
+                            'format': output_format,
+                            'time_frame': time_frame,
+                            'slice_location': get_slice_location(ds, i),
+                            'slice_position': get_slice_position(ds, i)
+                        })
+                        
+            elif slice_type == 'single_slice':
+                # Single slice DICOM
+                image_b64 = convert_to_image(pixel_array, output_format)
+                if image_b64:
+                    slices.append({
+                        'slice_number': 0,
+                        'image_data': image_b64,
+                        'format': output_format,
+                        'slice_location': get_slice_location(ds, 0),
+                        'slice_position': get_slice_position(ds, 0)
+                    })
+            
+            # Add image dimensions to metadata
+            if len(pixel_array.shape) >= 2:
+                metadata['image_width'] = int(pixel_array.shape[-1])
+                metadata['image_height'] = int(pixel_array.shape[-2])
+        
+        return {
+            'success': True,
+            'metadata': metadata,
+            'slices': slices,
+            'total_slices_extracted': len(slices),
+            'auto_detection_info': detected_slices
+        }
+        
+    except ImportError as e:
+        return {
+            'success': False,
+            'error': f'Missing required libraries: {str(e)}',
+            'message': 'Please install pydicom and Pillow: pip install pydicom Pillow'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to process DICOM file'
+        }
+
+def extract_raw_frames_data(file_path, frames):
+    """
+    Extract raw pixel data for multiple frames from DICOM file
+    Returns binary pixel data for WADO-RS compliance
+    """
+    try:
+        import pydicom
+        import numpy as np
+        
+        # Read DICOM file
+        ds = pydicom.dcmread(str(file_path), force=True)
+        
+        if not hasattr(ds, 'pixel_array'):
+            return {
+                'success': False,
+                'error': 'DICOM file does not contain pixel data'
+            }
+        
+        pixel_array = ds.pixel_array
+        
+        # Collect pixel data for all requested frames
+        frame_data_list = []
+        
+        for frame in frames:
+            if len(pixel_array.shape) > 2:
+                if frame >= pixel_array.shape[0]:
+                    return {
+                        'success': False,
+                        'error': f'Frame {frame} not available. Total frames: {pixel_array.shape[0]}'
+                    }
+                frame_pixels = pixel_array[frame]
+            else:
+                if frame > 0:
+                    return {
+                        'success': False,
+                        'error': f'Single frame DICOM, frame {frame} not available'
+                    }
+                frame_pixels = pixel_array
+            
+            # Convert to appropriate data type for WADO-RS
+            if frame_pixels.dtype == np.uint8:
+                data_type = 'uint8'
+            elif frame_pixels.dtype == np.uint16:
+                data_type = 'uint16'
+            elif frame_pixels.dtype == np.int16:
+                data_type = 'int16'
+            else:
+                # Convert to uint16 for compatibility
+                frame_pixels = frame_pixels.astype(np.uint16)
+                data_type = 'uint16'
+            
+            frame_data_list.append(frame_pixels.tobytes())
+        
+        # Concatenate all frame data
+        combined_data = b''.join(frame_data_list)
+        
+        # Get image dimensions from first frame
+        first_frame = pixel_array[0] if len(pixel_array.shape) > 2 else pixel_array
+        
+        return {
+            'success': True,
+            'pixel_data': combined_data,
+            'width': int(first_frame.shape[1]),
+            'height': int(first_frame.shape[0]),
+            'data_type': data_type,
+            'frame_count': len(frames),
+            'bytes_per_frame': len(frame_data_list[0]) if frame_data_list else 0
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to extract frame data: {str(e)}'
+        }
         
         slices = []
         
@@ -291,6 +467,134 @@ def get_slice_position(dicom_dataset, slice_index):
     except:
         return None
 
+def extract_raw_pixel_data(file_path, frame=0, window_center=None, window_width=None):
+    """
+    Extract raw pixel data from DICOM file for client-side rendering
+    Returns binary pixel data with metadata for optimal performance
+    """
+    try:
+        import pydicom
+        import numpy as np
+        import sys
+        import json
+        
+        # Read DICOM file
+        ds = pydicom.dcmread(str(file_path), force=True)
+        
+        if not hasattr(ds, 'pixel_array'):
+            return {
+                'success': False,
+                'error': 'DICOM file does not contain pixel data'
+            }
+        
+        pixel_array = ds.pixel_array
+        
+        # Handle multi-frame DICOM
+        if len(pixel_array.shape) > 2:
+            if frame >= pixel_array.shape[0]:
+                return {
+                    'success': False,
+                    'error': f'Frame {frame} not available. Total frames: {pixel_array.shape[0]}'
+                }
+            pixel_data = pixel_array[frame]
+        else:
+            pixel_data = pixel_array
+        
+        # Apply windowing if specified
+        if window_center is not None and window_width is not None:
+            pixel_data = apply_windowing(pixel_data, window_center, window_width)
+        else:
+            # Auto-calculate windowing from DICOM tags
+            wc = getattr(ds, 'WindowCenter', None)
+            ww = getattr(ds, 'WindowWidth', None)
+            
+            if wc is not None and ww is not None:
+                # Handle multiple window values (take first)
+                if hasattr(wc, '__iter__') and not isinstance(wc, str):
+                    wc = wc[0]
+                if hasattr(ww, '__iter__') and not isinstance(ww, str):
+                    ww = ww[0]
+                
+                pixel_data = apply_windowing(pixel_data, float(wc), float(ww))
+                window_center = float(wc)
+                window_width = float(ww)
+            else:
+                # Use full dynamic range
+                window_center = float(np.mean(pixel_data))
+                window_width = float(np.max(pixel_data) - np.min(pixel_data))
+        
+        # Normalize to 16-bit unsigned integers for consistent client-side handling
+        if pixel_data.dtype != np.uint16:
+            # Normalize to 0-65535 range
+            pixel_min = np.min(pixel_data)
+            pixel_max = np.max(pixel_data)
+            if pixel_max > pixel_min:
+                pixel_data = ((pixel_data - pixel_min) / (pixel_max - pixel_min) * 65535).astype(np.uint16)
+            else:
+                pixel_data = np.zeros_like(pixel_data, dtype=np.uint16)
+        
+        # Prepare metadata
+        metadata = {
+            'width': int(pixel_data.shape[1]),
+            'height': int(pixel_data.shape[0]),
+            'pixel_format': 'uint16',
+            'bits_allocated': int(getattr(ds, 'BitsAllocated', 16)),
+            'photometric_interpretation': str(getattr(ds, 'PhotometricInterpretation', 'MONOCHROME2')),
+            'window_center': window_center,
+            'window_width': window_width,
+            'frame': frame,
+            'total_frames': pixel_array.shape[0] if len(pixel_array.shape) > 2 else 1
+        }
+        
+        # Output metadata as JSON followed by binary data
+        print(json.dumps(metadata))
+        print("---PIXEL_DATA_START---")
+        sys.stdout.flush()
+        
+        # Output raw pixel data as binary
+        sys.stdout.buffer.write(pixel_data.tobytes())
+        sys.stdout.buffer.flush()
+        
+        return {
+            'success': True,
+            'metadata': metadata,
+            'data_size': pixel_data.nbytes
+        }
+        
+    except ImportError as e:
+        return {
+            'success': False,
+            'error': f'Missing required libraries: {str(e)}',
+            'message': 'Please install pydicom and numpy: pip install pydicom numpy'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to extract raw pixel data from DICOM file'
+        }
+
+def apply_windowing(pixel_data, window_center, window_width):
+    """
+    Apply DICOM windowing (window/level) to pixel data
+    """
+    import numpy as np
+    
+    # Calculate window bounds
+    window_min = window_center - window_width / 2
+    window_max = window_center + window_width / 2
+    
+    # Apply windowing
+    windowed_data = np.clip(pixel_data, window_min, window_max)
+    
+    # Normalize to full range
+    if window_max > window_min:
+        windowed_data = (windowed_data - window_min) / (window_max - window_min)
+    else:
+        windowed_data = np.zeros_like(windowed_data)
+    
+    return windowed_data
+
 def convert_to_image(pixel_array, output_format='PNG'):
     """
     Convert pixel array to base64 encoded image
@@ -512,11 +816,78 @@ def main():
                 'error': 'File path required for get_info'
             }))
             return
-        
+
         file_path = sys.argv[2]
         result = get_dicom_info(file_path)
         print(json.dumps(result))
     
+    elif command == 'raw_pixels':
+        if len(sys.argv) < 3:
+            print(json.dumps({
+                'success': False,
+                'error': 'File path required for raw_pixels'
+            }))
+            return
+
+        file_path = sys.argv[2]
+        frame = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+        window_center = float(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] != 'null' else None
+        window_width = float(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] != 'null' else None
+        
+        result = extract_raw_pixel_data(file_path, frame, window_center, window_width)
+        
+        if result['success']:
+            # Output metadata as JSON first
+            metadata = {
+                'success': True,
+                'width': result.get('width', 512),
+                'height': result.get('height', 512),
+                'data_type': result.get('data_type', 'uint16'),
+                'pixel_spacing': result.get('pixel_spacing'),
+                'window_center': result.get('window_center'),
+                'window_width': result.get('window_width')
+            }
+            
+            # Print metadata to stderr so it doesn't interfere with binary data
+            print(json.dumps(metadata), file=sys.stderr)
+            
+            # Output raw binary pixel data to stdout
+            sys.stdout.buffer.write(result.get('pixel_data', b''))
+        else:
+            print(json.dumps(result))
+    
+    elif command == 'raw_frames':
+        if len(sys.argv) < 4:
+            print(json.dumps({
+                'success': False,
+                'error': 'File path and frame list required for raw_frames'
+            }))
+            return
+
+        file_path = sys.argv[2]
+        frame_list = sys.argv[3].split(',')
+        frames = [int(f.strip()) for f in frame_list]
+        
+        result = extract_raw_frames_data(file_path, frames)
+        
+        if result['success']:
+            # Output metadata as JSON to stderr
+            metadata = {
+                'success': True,
+                'frame_count': len(frames),
+                'width': result.get('width', 512),
+                'height': result.get('height', 512),
+                'data_type': result.get('data_type', 'uint16'),
+                'total_bytes': len(result.get('pixel_data', b''))
+            }
+            
+            print(json.dumps(metadata), file=sys.stderr)
+            
+            # Output raw binary pixel data to stdout
+            sys.stdout.buffer.write(result.get('pixel_data', b''))
+        else:
+            print(json.dumps(result))
+
     else:
         print(json.dumps({
             'success': False,

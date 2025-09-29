@@ -84,7 +84,7 @@ export class VTKDicomLoader {
     fileName: string,
     sliceIndex: number
   ): Promise<DicomSliceData> {
-    const url = `/api/dicom/process/${patientId}/${fileName}?frame=${sliceIndex}`;
+    const url = `http://localhost:8000/dicom/process/${patientId}/${fileName}?frame=${sliceIndex}`;
     
     try {
       const response = await fetch(url);

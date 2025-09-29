@@ -6,7 +6,7 @@
  */
 
 import { enhancedDicomService } from '../services/enhancedDicomService';
-import { Cornerstone3DService } from '../services/cornerstone3DService';
+import cornerstone3DService from '../services/cornerstone3DService';
 import { studyService } from '../services/studyService';
 import { environmentService } from '../services/environmentService';
 

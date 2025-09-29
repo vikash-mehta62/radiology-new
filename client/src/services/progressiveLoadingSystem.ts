@@ -294,7 +294,7 @@ class ProgressiveLoadingSystem {
   private initializeWorkerPool(): void {
     for (let i = 0; i < this.config.workerPoolSize; i++) {
       try {
-        const worker = new Worker('/workers/image-processor.js');
+        const worker = new Worker('/workers/imageProcessingWorker.js');
         worker.onmessage = (event) => {
           this.handleWorkerMessage(event);
         };

@@ -2,12 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Toaster } from 'react-hot-toast';
 
 import App from './App';
-import { theme } from './theme';
 import { AuthProvider } from './contexts/AuthContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import reportWebVitals from './reportWebVitals';
@@ -37,45 +35,43 @@ const root = ReactDOM.createRoot(
 root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <BrowserRouter
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true
-          }}
-        >
-          <AuthProvider>
-            <WebSocketProvider>
-              <App />
-              <Toaster
-                position="top-right"
-                toastOptions={{
-                  duration: 4000,
-                  style: {
-                    background: '#363636',
-                    color: '#fff',
+      <CssBaseline />
+      <BrowserRouter
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true
+        }}
+      >
+        <AuthProvider>
+          <WebSocketProvider>
+            <App />
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 4000,
+                style: {
+                  background: '#363636',
+                  color: '#fff',
+                },
+                success: {
+                  duration: 3000,
+                  iconTheme: {
+                    primary: '#4caf50',
+                    secondary: '#fff',
                   },
-                  success: {
-                    duration: 3000,
-                    iconTheme: {
-                      primary: '#4caf50',
-                      secondary: '#fff',
-                    },
+                },
+                error: {
+                  duration: 5000,
+                  iconTheme: {
+                    primary: '#f44336',
+                    secondary: '#fff',
                   },
-                  error: {
-                    duration: 5000,
-                    iconTheme: {
-                      primary: '#f44336',
-                      secondary: '#fff',
-                    },
-                  },
-                }}
-              />
-            </WebSocketProvider>
-          </AuthProvider>
-        </BrowserRouter>
-      </ThemeProvider>
+                },
+              }}
+            />
+          </WebSocketProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>
 );

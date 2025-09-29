@@ -192,6 +192,12 @@ const StudyViewer: React.FC = () => {
         console.log("✅ [StudyViewer] About to set study state")
         setStudy(response)
         console.log("✅ [StudyViewer] Study state set successfully")
+
+        // 🚀 WADO-RS Pre-fetching: Start parallel loading of first 5-10 images
+        if (response.image_urls && response.image_urls.length > 0) {
+          console.log("🚀 [StudyViewer] Starting WADO-RS pre-fetching for first images...")
+          prefetchInitialImages(response)
+        }
       } catch (err) {
         let errorMessage = "Failed to load study"
         
@@ -229,6 +235,93 @@ const StudyViewer: React.FC = () => {
   const handleCreateReport = () => {
     console.log("Create report for study:", studyUid)
     setShowCreateReportDialog(true)
+  }
+
+  // 🚀 WADO-RS Pre-fetching Implementation
+  const prefetchInitialImages = async (study: Study) => {
+    try {
+      const maxPrefetchImages = 5 // Reduced from 10 to avoid overwhelming the browser
+      const imagesToPrefetch = study.image_urls?.slice(0, maxPrefetchImages) || []
+      
+      console.log(`🚀 [StudyViewer] Pre-fetching ${imagesToPrefetch.length} initial images via WADO-RS`)
+      
+      // Process images sequentially to avoid browser request limits
+      const results = []
+      for (let index = 0; index < imagesToPrefetch.length; index++) {
+        const imageUrl = imagesToPrefetch[index]
+        
+        try {
+          // Extract filename from URL
+          const urlParts = imageUrl.split('/')
+          const filename = urlParts[urlParts.length - 1]
+          
+          const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000'
+          
+          // Create AbortController for timeout management
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout per request
+          
+          try {
+            // Pre-fetch metadata first (lightweight)
+            const metadataUrl = `${apiUrl}/rs/studies/${study.patient_id}/instances/${filename}/metadata`
+            const metadataResponse = await fetch(metadataUrl, {
+              method: 'GET',
+              headers: { 'Accept': 'application/json' },
+              signal: controller.signal
+            })
+            
+            if (metadataResponse.ok) {
+              // Only fetch frame data if metadata was successful
+              const frameUrl = `${apiUrl}/rs/studies/${study.patient_id}/instances/${filename}/frames/10`
+              const frameResponse = await fetch(frameUrl, {
+                method: 'GET',
+                headers: { 'Accept': 'application/octet-stream' },
+                signal: controller.signal
+              })
+              
+              if (frameResponse.ok) {
+                console.log(`✅ [StudyViewer] Pre-fetched image ${index + 1}/${imagesToPrefetch.length}: ${filename}`)
+                results.push({ success: true, filename, index })
+              } else {
+                console.warn(`⚠️ [StudyViewer] Failed to pre-fetch frame for image ${index + 1}: ${filename} (${frameResponse.status})`)
+                results.push({ success: false, filename, index, error: `Frame fetch failed: ${frameResponse.status}` })
+              }
+            } else {
+              console.warn(`⚠️ [StudyViewer] Failed to pre-fetch metadata for image ${index + 1}: ${filename} (${metadataResponse.status})`)
+              results.push({ success: false, filename, index, error: `Metadata fetch failed: ${metadataResponse.status}` })
+            }
+          } finally {
+            clearTimeout(timeoutId)
+          }
+          
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            console.warn(`⏱️ [StudyViewer] Pre-fetch timeout for image ${index + 1}: ${filename}`)
+            results.push({ success: false, filename: filename || 'unknown', index, error: 'Timeout' })
+          } else {
+            console.warn(`⚠️ [StudyViewer] Error pre-fetching image ${index + 1}:`, error)
+            results.push({ success: false, filename: filename || 'unknown', index, error: error.message })
+          }
+        }
+        
+        // Small delay between requests to avoid overwhelming the server
+        if (index < imagesToPrefetch.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+      
+      const successful = results.filter(result => result.success).length
+      console.log(`🎯 [StudyViewer] Pre-fetching completed: ${successful}/${imagesToPrefetch.length} images cached`)
+      
+      // Log any failures for debugging
+      const failures = results.filter(result => !result.success)
+      if (failures.length > 0) {
+        console.warn(`⚠️ [StudyViewer] Pre-fetch failures:`, failures)
+      }
+      
+    } catch (error) {
+      console.error('❌ [StudyViewer] Pre-fetching error:', error)
+    }
   }
 
 

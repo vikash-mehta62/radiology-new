@@ -1,210 +1,39 @@
-/**
- * Unified DICOM Viewer - Consolidated Implementation
- * 
- * A comprehensive DICOM viewer that consolidates all features from multiple implementations:
- * - Latest GPU driver compatibility (NVIDIA RTX 40 series, AMD RDNA 3, Intel Arc)
- * - WebGPU acceleration with fallback to WebGL 2.0/WebGL
- * - HTJ2K (High-Throughput JPEG 2000) support for medical imaging
- * - NVIDIA nvJPEG2000 library integration for GPU-accelerated decoding
- * - Cornerstone3D 2.0 with WebGL/WebGPU acceleration
- * - VTK.js 30.5.0 for advanced 3D visualization and volume rendering
- * - Enhanced performance monitoring and adaptive quality
- * - Modern UI with accessibility compliance (WCAG 2.1)
- * - Advanced security validation and audit trails
- * - Multi-viewport layouts with synchronized navigation
- * - AI-powered image enhancement and abnormality detection
- * - Real-time collaboration capabilities
- * - Progressive loading and memory management
- * - Cross-platform compatibility and mobile responsiveness
- * - Production-grade deployment configuration
- */
-
-import React, { 
-  useEffect, 
-  useRef, 
-  useState, 
-  useCallback, 
-  useMemo, 
-  useImperativeHandle,
-  forwardRef,
-  startTransition,
-  Suspense,
-  lazy
-} from 'react';
-import {
-  Box,
-  Paper,
-  Grid,
-  Typography,
-  IconButton,
-  Tooltip,
-  ButtonGroup,
-  Divider,
-  Card,
-  CardContent,
-  Tabs,
-  Tab,
-  Drawer,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
-  Switch,
-  FormControlLabel,
-  Slider,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Alert,
-  Snackbar,
-  CircularProgress,
-  Backdrop,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Fab,
-  useTheme,
-  useMediaQuery,
-  alpha,
-  Stack,
-  Chip,
-  Badge,
-  LinearProgress,
-  AppBar,
-  Toolbar
-} from '@mui/material';
-import {
-  ViewInAr,
-  ViewModule,
-  Dashboard,
-  ZoomIn,
-  ZoomOut,
-  RotateLeft,
-  RotateRight,
-  RestartAlt,
-  Fullscreen,
-  FullscreenExit,
-  PlayArrow,
-  Pause,
-  SkipNext,
-  SkipPrevious,
-  Settings,
-  Info,
-  Security,
-  Speed,
-  Memory,
-  Visibility,
-  VisibilityOff,
-  ThreeDRotation,
-  Straighten,
-  CropFree,
-  Brightness6,
-  Contrast,
-  InvertColors,
-  TouchApp,
-  PanTool,
-  Menu,
-  Close,
-  Warning,
-  CheckCircle,
-  Error as ErrorIcon,
-  Assessment,
-  Timeline,
-  Accessibility,
-  Download,
-  Share,
-  Print,
-  CloudDownload,
-  Cached,
-  GraphicEq,
-  AutoAwesome,
-  SmartToy,
-  HighQuality,
-  Tune,
-  Layers,
-  ViewComfy,
-  Palette
-} from '@mui/icons-material';
-
-// Enhanced Hooks and utilities
-import { useAccessibility } from '../Accessibility/AccessibilityProvider';
-import { useRadiologyWorkflow } from '../../hooks/useRadiologyWorkflow';
-import { useRadiologyDarkMode } from './RadiologyDarkMode';
-
-// Types
-import type { Study } from '../../types';
-
-// Enhanced Services - Latest Versions
+import { Box, CircularProgress, Fab, LinearProgress, MenuItem, Snackbar, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button, Grid, FormControl, InputLabel, Select, FormControlLabel, Switch, Drawer, Typography } from '@mui/material';
+import { Error as ErrorIcon, Settings, SmartToy, FullscreenExit, Fullscreen, BugReport } from '@mui/icons-material';
+import ErrorBoundary from '../../components/ErrorBoundary';
+import DicomToolbar from './components/DicomToolbar';
+import DicomSidebar from './components/DicomSidebar';
+import DicomOverlay from './components/DicomOverlay';
+import { PerformanceMonitor } from './components/PerformanceMonitor';
+import { normalizeError } from '../../utils/errorUtils';
+import { enhancedDicomService } from '../../services/enhancedDicomService';
 import { Cornerstone3DService } from '../../services/cornerstone3DService';
 import { Cornerstone3DToolsService } from '../../services/cornerstone3DToolsService';
 import { EnhancedVTKService } from '../../services/vtkEnhancedService';
-import { enhancedDicomService } from '../../services/enhancedDicomService';
-import vtkEnhancedService, { EnhancedVTKConfig, VolumeRenderingConfig, MPRConfig } from '../../services/vtkEnhancedService';
 import { dicomSecurityValidator } from '../../services/dicomSecurityValidator';
 import { dicomSecurityAudit } from '../../services/dicomSecurityAudit';
-import { performanceMonitor } from '../../services/performanceMonitor';
-import { errorHandler, ErrorType, ViewerError } from '../../services/errorHandler';
-import { studyService } from '../../services/studyService';
-import { logger, LogCategory } from '../../services/loggingService';
-import { normalizeError } from '../../utils/errorUtils';
+import { initializeDiagnosticServices } from '../../services/Diagnostic';
+import { GPUCapabilities } from '../../types/GPUCapabilities';
+import ViewerCore from './core/ViewerCore';
+import DiagnosticPanel from './DiagnosticPanel';
+import { ViewerError } from '../../types/ViewerError';
+import { EnhancedVTKConfig } from '../../types/VTK';
+import { Study } from '../../types/Study';
+import { forwardRef, useRef, useState, useEffect, useCallback, useMemo, Suspense, useImperativeHandle } from 'react';
+import { useTheme, useMediaQuery } from '@mui/material';
+import { useAccessibility } from '../Accessibility/AccessibilityProvider';
+import { useRadiologyDarkMode } from './RadiologyDarkMode';
+// ServiceManager integration
+import ServiceManager, { useServices, ServiceManagerConfig } from './core/ServiceManager';
+import { AIEnhancementModule } from '../../services/aiEnhancementModule';
+import { AbnormalityDetectionService } from '../../services/abnormalityDetectionService';
 
-// Lazy-loaded components for performance optimization
-const MemoryManager = lazy(() => import('./components/MemoryManager'));
-const RenderingOptimizer = lazy(() => import('./components/RenderingOptimizer'));
-const ErrorBoundary = lazy(() => import('./components/ErrorBoundary'));
-const ViewerCore = lazy(() => import('./core/ViewerCore'));
-const MPRViewer = lazy(() => import('./MPRViewer'));
-const ToolbarManager = lazy(() => import('./components/ToolbarManager').then(module => ({ default: module.ToolbarManager })));
-const ViewportManager = lazy(() => import('./components/ViewportManager').then(module => ({ default: module.ViewportManager })));
-const StudyBrowser = lazy(() => import('./components/StudyBrowser').then(module => ({ default: module.StudyBrowser })));
-const DicomOverlay = lazy(() => import('./components/DicomOverlay'));
-const DicomToolbar = lazy(() => import('./components/DicomToolbar'));
-const DicomSidebar = lazy(() => import('./components/DicomSidebar'));
-const AdvancedDicomMetadata = lazy(() => import('./components/AdvancedDicomMetadata'));
-const PerformanceMonitorComponent = lazy(() => import('./components/PerformanceMonitor').then(module => ({ default: module.PerformanceMonitor })));
-const ColorblindAccessibility = lazy(() => import('./ColorblindAccessibility').then(module => ({ default: module.ColorblindAccessibility })));
-const Navigation3DControls = lazy(() => import('./Navigation3DControls'));
-const VTKMPRViewer = lazy(() => import('../VTKMPRViewer'));
-
-// Enhanced GPU Detection and Compatibility
-export interface GPUCapabilities {
-  webgpu: boolean;
-  webgl2: boolean;
-  webgl: boolean;
-  vendor: 'nvidia' | 'amd' | 'intel' | 'apple' | 'unknown';
-  model: string;
-  memory: number;
-  computeCapability?: string;
-  driverVersion?: string;
-  supportedFeatures: string[];
-}
-
-// Enhanced Performance Metrics
-export interface PerformanceMetrics {
-  fps: number;
-  frameTime: number;
-  memoryUsage: number;
-  gpuUtilization: number;
-  renderingMode: 'webgpu' | 'webgl2' | 'webgl' | 'software';
-  decodingTime: number;
-  loadingTime: number;
-  qualityLevel: 'diagnostic' | 'high' | 'medium' | 'low';
-}
-
-// Consolidated Viewer Props Interface
+// Type definitions
 export interface UnifiedDicomViewerProps {
-  // Core data
   study?: Study;
   studyAnalysis?: any;
-  
-  // User configuration
-  userRole?: 'radiologist' | 'technician' | 'referring_physician' | 'student' | 'researcher' | 'admin';
-  viewerMode?: 'diagnostic' | 'review' | 'comparison' | 'teaching' | 'research';
-  
-  // Enhanced feature flags
+  userRole?: 'radiologist' | 'technician' | 'referring_physician' | 'student';
+  viewerMode?: 'diagnostic' | 'review' | 'teaching';
   enableAdvancedTools?: boolean;
   enableCollaboration?: boolean;
   enableAI?: boolean;
@@ -219,200 +48,102 @@ export interface UnifiedDicomViewerProps {
   enableSecurity?: boolean;
   enablePerformanceMonitoring?: boolean;
   enableAccessibility?: boolean;
-  
-  // Performance configuration
   targetFrameRate?: number;
   maxMemoryUsage?: number;
   enableGPUAcceleration?: boolean;
-  preferredRenderingMode?: 'auto' | 'webgpu' | 'webgl2' | 'webgl' | 'software';
-  qualityPreset?: 'diagnostic' | 'high' | 'balanced' | 'performance';
-  
-  // AI configuration
-  aiConfidenceThreshold?: number;
-  enableAIEnhancement?: boolean;
-  enableAbnormalityDetection?: boolean;
-  enableAutoWindowing?: boolean;
-  enableSmartMeasurements?: boolean;
-  
-  // Layout configuration
-  defaultLayout?: 'single' | 'dual' | 'quad' | 'mpr' | '3d' | 'comparison' | 'hanging' | 'custom';
-  enableMultiViewport?: boolean;
-  enableSynchronization?: boolean;
-  enableLinking?: boolean;
-  
-  // Collaboration configuration
-  enableRealTimeSync?: boolean;
-  enableAnnotationSharing?: boolean;
-  enableVoiceComments?: boolean;
-  
-  // Security configuration
-  enableAuditLogging?: boolean;
-  enableEncryption?: boolean;
-  enableWatermarking?: boolean;
-  
-  // Callbacks
+  preferredRenderingMode?: 'auto' | 'webgl' | 'canvas';
   onStudyLoad?: (study: Study) => void;
-  onError?: (error: ViewerError | string) => void;
-  onStateChange?: (state: any) => void;
-  onPerformanceUpdate?: (metrics: PerformanceMetrics) => void;
-  onSecurityEvent?: (event: any) => void;
-  onCollaborationEvent?: (event: any) => void;
-  onGPUCapabilitiesDetected?: (capabilities: GPUCapabilities) => void;
-  
-  // Styling
-  width?: number | string;
-  height?: number | string;
-  className?: string;
-  sx?: any;
-  theme?: 'light' | 'dark' | 'auto' | 'high-contrast';
+  onError?: (error: string) => void;
+  onPerformanceUpdate?: (metrics: any) => void;
+  width?: number;
+  height?: number;
 }
 
-// Consolidated Viewer Ref Interface
 export interface UnifiedDicomViewerRef {
-  // Viewer control
   loadStudy: (study: Study) => Promise<void>;
+  setLayout: (layout: string) => void;
+  setActiveTool: (toolName: string) => void;
+  exportImage: () => string | null;
+  toggleFullscreen: () => void;
+  getPerformanceMetrics: () => any;
   resetView: () => void;
   fitToWindow: () => void;
-  
-  // Layout control
-  setLayout: (layout: string) => void;
-  toggleFullscreen: () => void;
-  synchronizeViewports: (enable: boolean) => void;
-  linkViewports: (viewportIds: string[]) => void;
-  
-  // Tool control
-  setActiveTool: (toolName: string) => void;
-  getActiveTool: () => string | null;
-  enableTool: (toolName: string) => void;
-  disableTool: (toolName: string) => void;
-  enableAIAssistance: (enabled: boolean) => void;
-  
-  // Export functions
-  exportImage: (format?: 'png' | 'jpg' | 'dicom') => Promise<string | Blob>;
-  exportReport: () => Promise<any>;
-  exportMeasurements: () => Promise<any>;
-  
-  // Performance
-  getPerformanceMetrics: () => PerformanceMetrics;
-  optimizePerformance: () => void;
-  clearCache: () => void;
-  setQualityLevel: (level: 'diagnostic' | 'high' | 'medium' | 'low') => void;
-  
-  // Security
-  validateSecurity: () => Promise<boolean>;
-  generateAuditReport: () => Promise<any>;
-  
-  // Collaboration
-  startCollaborationSession: () => Promise<string>;
-  joinCollaborationSession: (sessionId: string) => Promise<void>;
-  leaveCollaborationSession: () => void;
-  
-  // GPU capabilities
-  getGPUCapabilities: () => GPUCapabilities;
-  switchRenderingMode: (mode: 'webgpu' | 'webgl2' | 'webgl' | 'software') => void;
 }
 
-// Enhanced viewport layouts
-const VIEWPORT_LAYOUTS = {
-  single: { rows: 1, cols: 1, viewports: ['main'] },
-  dual: { rows: 1, cols: 2, viewports: ['left', 'right'] },
-  quad: { rows: 2, cols: 2, viewports: ['tl', 'tr', 'bl', 'br'] },
-  mpr: { rows: 2, cols: 2, viewports: ['axial', 'sagittal', 'coronal', '3d'] },
-  '3d': { rows: 1, cols: 1, viewports: ['3d'] },
-  comparison: { rows: 1, cols: 2, viewports: ['current', 'prior'] },
-  hanging: { rows: 3, cols: 3, viewports: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9'] },
-  custom: { rows: 1, cols: 1, viewports: ['custom'] }
+// Default state values for the viewer
+const defaultViewerState = {
+  isInitialized: false,
+  isLoading: false,
+  loadingProgress: 0,
+  loadingMessage: '',
+  loadingStage: 'initializing' as const,
+  currentStudy: null,
+  currentSeries: null,
+  currentImage: null,
+  priorStudy: null,
+  studyMetadata: null,
+  layout: 'single' as const,
+  activeViewport: 'main',
+  viewports: {},
+  synchronizedViewports: [],
+  linkedViewports: [],
+  activeTool: 'WindowLevel',
+  toolSettings: {},
+  availableTools: [],
+  windowWidth: 400,
+  windowCenter: 40,
+  zoom: 1,
+  pan: { x: 0, y: 0 },
+  rotation: 0,
+  invert: false,
+  isPlaying: false,
+  currentFrame: 0,
+  totalFrames: 1,
+  playbackSpeed: 1,
+  sidebarOpen: false,
+  toolbarVisible: true,
+  overlayVisible: true,
+  fullscreen: false,
+  settingsOpen: false,
+  performanceMetrics: {
+    frameRate: 0,
+    renderTime: 0,
+    memoryUsage: 0,
+    gpuUtilization: 0,
+    cacheHitRate: 0,
+    networkLatency: 0,
+    loadingTime: 0,
+    processingTime: 0
+  },
+  memoryUsage: 0,
+  renderingMode: 'software' as const,
+  qualityLevel: 'diagnostic' as const,
+  frameRate: 0,
+  gpuCapabilities: null,
+  securityValidated: false,
+  securityEvents: [],
+  aiProcessing: false,
+  aiResults: [],
+  abnormalityDetections: [],
+  detectedAbnormalities: [],
+  aiEnhancements: [],
+  collaborationActive: false,
+  collaborationSessionId: null,
+  participants: [],
+  highContrastMode: false,
+  screenReaderMode: false,
+  keyboardNavigation: false,
+  error: null,
+  warnings: [],
+  diagnosticEnabled: true,
+  diagnosticsPanelOpen: false,
+  gpuDiagnostics: null,
+  cornerstoneDiagnostics: null,
+  windowLevelDiagnostics: null,
+  dataFlowDiagnostics: null,
+  diagnosticEvents: [],
+  diagnosticHistory: []
 };
-
-// Consolidated Viewer State Interface
-interface UnifiedViewerState {
-  // Initialization state
-  isInitialized: boolean;
-  isLoading: boolean;
-  loadingProgress: number;
-  loadingMessage: string;
-  loadingStage: 'initializing' | 'loading' | 'decoding' | 'rendering' | 'complete';
-  
-  // Study data
-  currentStudy: Study | null;
-  currentSeries: any | null;
-  currentImage: any | null;
-  priorStudy: Study | null;
-  studyMetadata: any | null;
-  
-  // Viewport state
-  layout: string;
-  previousLayout?: string;
-  activeViewport: string;
-  viewports: Record<string, any>;
-  synchronizedViewports: string[];
-  linkedViewports: string[];
-  
-  // Tool state
-  activeTool: string;
-  toolSettings: Record<string, any>;
-  availableTools: string[];
-  aiAssistanceEnabled: boolean;
-  
-  // Display state
-  windowWidth: number;
-  windowCenter: number;
-  zoom: number;
-  pan: { x: number; y: number };
-  rotation: number;
-  invert: boolean;
-  
-  // Playback state
-  isPlaying: boolean;
-  currentFrame: number;
-  totalFrames: number;
-  playbackSpeed: number;
-  
-  // UI state
-  sidebarOpen: boolean;
-  toolbarVisible: boolean;
-  overlayVisible: boolean;
-  fullscreen: boolean;
-  settingsOpen: boolean;
-  
-  // Performance state
-  performanceMetrics: PerformanceMetrics;
-  memoryUsage: number;
-  renderingMode: 'webgpu' | 'webgl2' | 'webgl' | 'software';
-  qualityLevel: 'diagnostic' | 'high' | 'medium' | 'low';
-  frameRate: number;
-  gpuCapabilities: GPUCapabilities | null;
-  
-  // Security state
-  securityValidated: boolean;
-  securityEvents: any[];
-  auditEnabled: boolean;
-  encryptionEnabled: boolean;
-  
-  // AI state
-  aiEnabled: boolean;
-  aiProcessing: boolean;
-  aiResults: any[];
-  abnormalityDetections: any[];
-  detectedAbnormalities: any[];
-  autoWindowingActive: boolean;
-  aiEnhancements: any[];
-  
-  // Collaboration state
-  collaborationActive: boolean;
-  collaborationSessionId: string | null;
-  participants: any[];
-  
-  // Accessibility state
-  accessibilityMode: boolean;
-  highContrastMode: boolean;
-  screenReaderMode: boolean;
-  keyboardNavigation: boolean;
-  
-  // Error state
-  error: ViewerError | string | null;
-  warnings: string[];
-}
 
 const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerProps>(({
   study,
@@ -479,7 +210,7 @@ const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerP
   const servicesRef = useRef<{
     cornerstone3D: Cornerstone3DService | null;
     cornerstone3DTools: Cornerstone3DToolsService | null;
-    vtkEnhanced: typeof vtkEnhancedService | null;
+    vtkEnhanced: typeof EnhancedVTKService | null;
     dicom: typeof enhancedDicomService | null;
   }>({
     cornerstone3D: null,
@@ -525,14 +256,14 @@ const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerP
     fullscreen: false,
     settingsOpen: false,
     performanceMetrics: {
-      fps: 0,
-      frameTime: 0,
+      frameRate: 0,
+      renderTime: 0,
       memoryUsage: 0,
       gpuUtilization: 0,
-      renderingMode: 'software',
-      decodingTime: 0,
+      cacheHitRate: 0,
+      networkLatency: 0,
       loadingTime: 0,
-      qualityLevel: 'diagnostic'
+      processingTime: 0
     },
     memoryUsage: 0,
     renderingMode: 'software',
@@ -558,7 +289,17 @@ const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerP
     screenReaderMode: false,
     keyboardNavigation: false,
     error: null,
-    warnings: []
+    warnings: [],
+    
+    // Diagnostic state
+    diagnosticEnabled: true,
+    diagnosticsPanelOpen: false,
+    gpuDiagnostics: null,
+    cornerstoneDiagnostics: null,
+    windowLevelDiagnostics: null,
+    dataFlowDiagnostics: null,
+    diagnosticEvents: [],
+    diagnosticHistory: []
   });
   
   // Additional state for studies data
@@ -568,6 +309,39 @@ const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerP
   
   // Memory pressure state
   const [memoryPressure, setMemoryPressure] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
+
+  // ServiceManager configuration
+  const serviceManagerConfig: ServiceManagerConfig = useMemo(() => ({
+    enableWebGL: enableWebGL,
+    enableWebGPU: enableWebGPU,
+    enableProgressiveLoading: enableProgressiveLoading,
+    enableCaching: enableCaching,
+    adaptiveQuality: adaptiveQuality,
+    enableAI: enableAI,
+    aiSettings: {
+      enableEnhancement: enableAIEnhancement,
+      enableDetection: enableAbnormalityDetection,
+      confidenceThreshold: aiConfidenceThreshold,
+      autoProcess: enableAutoWindowing
+    },
+    memoryLimits: {
+      maxCacheSize: maxMemoryUsage * 1024 * 1024, // Convert MB to bytes
+      maxTextureMemory: (maxMemoryUsage * 0.5) * 1024 * 1024, // 50% for textures
+      maxPredictiveCache: (maxMemoryUsage * 0.3) * 1024 * 1024 // 30% for predictive cache
+    }
+  }), [
+    enableWebGL,
+    enableWebGPU,
+    enableProgressiveLoading,
+    enableCaching,
+    adaptiveQuality,
+    enableAI,
+    enableAIEnhancement,
+    enableAbnormalityDetection,
+    aiConfidenceThreshold,
+    enableAutoWindowing,
+    maxMemoryUsage
+  ]);
 
   // Notification state
   const [notification, setNotification] = useState<{
@@ -861,8 +635,10 @@ const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerP
         enableAdaptiveQuality: adaptiveQuality
       };
       
-      servicesRef.current.vtkEnhanced = vtkEnhancedService;
-      await servicesRef.current.vtkEnhanced.initialize(vtkConfig);
+      servicesRef.current.vtkEnhanced = new EnhancedVTKService(vtkConfig);
+      if (containerRef.current) {
+        await servicesRef.current.vtkEnhanced.initialize(containerRef.current);
+      }
       
       // Initialize DICOM Service
       setState(prev => ({ 
@@ -872,6 +648,15 @@ const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerP
       }));
       
       servicesRef.current.dicom = enhancedDicomService;
+      
+      // Initialize diagnostic services
+      setState(prev => ({ 
+        ...prev, 
+        loadingMessage: 'Initializing diagnostic services...',
+        loadingProgress: 85
+      }));
+      
+      await initializeDiagnosticServices();
       
       // Security validation
       if (enableSecurity) {
@@ -942,6 +727,122 @@ const UnifiedDicomViewer = forwardRef<UnifiedDicomViewerRef, UnifiedDicomViewerP
     onGPUCapabilitiesDetected,
     onError
   ]);
+
+  // Initialize diagnostic services
+  const initializeDiagnosticServices = useCallback(async () => {
+    try {
+      console.log('🔧 Initializing diagnostic services...');
+      
+      // Initialize GPU diagnostics
+      await gpuDiagnosticsService.initialize();
+      const gpuDiagnostics = await gpuDiagnosticsService.runDiagnostics();
+      
+      // Initialize Cornerstone diagnostics
+      await cornerstoneDiagnosticsService.initialize();
+      const cornerstoneDiagnostics = await cornerstoneDiagnosticsService.getSystemDiagnostics();
+      
+      // Initialize Window/Level diagnostics
+      await windowLevelDiagnosticsService.initialize();
+      
+      // Initialize Data Flow diagnostics
+      await dataFlowIntegrityService.initialize();
+      const dataFlowDiagnostics = await dataFlowIntegrityService.runFullCheck();
+      
+      // Update state with diagnostic results
+      setState(prev => ({
+        ...prev,
+        gpuDiagnostics,
+        cornerstoneDiagnostics,
+        dataFlowDiagnostics,
+        diagnosticEvents: [
+          ...prev.diagnosticEvents,
+          {
+            timestamp: new Date().toISOString(),
+            type: 'initialization',
+            source: 'diagnostic-services',
+            message: 'All diagnostic services initialized successfully',
+            severity: 'info'
+          }
+        ]
+      }));
+      
+      console.log('✅ Diagnostic services initialized successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize diagnostic services:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Diagnostic services initialization failed';
+      
+      setState(prev => ({
+        ...prev,
+        diagnosticEvents: [
+          ...prev.diagnosticEvents,
+          {
+            timestamp: new Date().toISOString(),
+            type: 'error',
+            source: 'diagnostic-services',
+            message: errorMessage,
+            severity: 'error'
+          }
+        ]
+      }));
+    }
+  }, []);
+
+  // Diagnostic event handlers
+  const handleDiagnosticEvent = useCallback((event: any) => {
+    setState(prev => ({
+      ...prev,
+      diagnosticEvents: [...prev.diagnosticEvents, event],
+      diagnosticHistory: [...prev.diagnosticHistory, event]
+    }));
+  }, []);
+
+  const runDiagnostics = useCallback(async () => {
+    try {
+      setState(prev => ({ ...prev, diagnosticsPanelOpen: true }));
+      
+      // Run all diagnostic checks
+      const [gpuDiag, cornerstoneDiag, dataFlowDiag] = await Promise.all([
+        gpuDiagnosticsService.runDiagnostics(),
+        cornerstoneDiagnosticsService.getSystemDiagnostics(),
+        dataFlowIntegrityService.runFullCheck()
+      ]);
+      
+      // Run window/level diagnostics if image is loaded
+      let windowLevelDiag = null;
+      if (state.currentImage) {
+        windowLevelDiag = await windowLevelDiagnosticsService.analyzeImage(state.currentImage);
+      }
+      
+      setState(prev => ({
+        ...prev,
+        gpuDiagnostics: gpuDiag,
+        cornerstoneDiagnostics: cornerstoneDiag,
+        windowLevelDiagnostics: windowLevelDiag,
+        dataFlowDiagnostics: dataFlowDiag,
+        diagnosticEvents: [
+          ...prev.diagnosticEvents,
+          {
+            timestamp: new Date().toISOString(),
+            type: 'diagnostic-run',
+            source: 'manual',
+            message: 'Manual diagnostic check completed',
+            severity: 'info'
+          }
+        ]
+      }));
+      
+    } catch (error) {
+      console.error('❌ Diagnostic check failed:', error);
+      handleDiagnosticEvent({
+        timestamp: new Date().toISOString(),
+        type: 'error',
+        source: 'diagnostic-run',
+        message: error instanceof Error ? error.message : 'Diagnostic check failed',
+        severity: 'error'
+      });
+    }
+  }, [state.currentImage, handleDiagnosticEvent]);
 
   // Performance monitoring
   const startPerformanceMonitoring = useCallback(() => {
@@ -1149,6 +1050,59 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
     // Use the first image for immediate display (viewer can handle multi-frame later)
     const firstImg = imagesArr[0];
 
+    // Convert images to HTMLImageElements for ViewerCore compatibility
+    const loadedImageElements: HTMLImageElement[] = [];
+    for (let i = 0; i < imagesArr.length; i++) {
+      const img = imagesArr[i];
+      if (img.htmlImage instanceof HTMLImageElement) {
+        loadedImageElements.push(img.htmlImage);
+      } else if (img.image instanceof HTMLImageElement) {
+        loadedImageElements.push(img.image);
+      } else if (img.canvas instanceof HTMLCanvasElement) {
+        // Convert canvas to image element
+        const imgElement = new Image();
+        imgElement.src = img.canvas.toDataURL();
+        loadedImageElements.push(imgElement);
+      } else if (typeof img.getPixelData === 'function' || img.pixelData instanceof Uint8Array) {
+        // Create image element from pixel data
+        const canvas = document.createElement('canvas');
+        const rows = img.rows || img.height || img.meta?.Rows || 512;
+        const cols = img.columns || img.width || img.meta?.Columns || 512;
+        canvas.width = cols;
+        canvas.height = rows;
+        const ctx = canvas.getContext('2d');
+        
+        if (ctx) {
+          const pixelData = typeof img.getPixelData === 'function' ? img.getPixelData() : img.pixelData;
+          const imageData = ctx.createImageData(cols, rows);
+          
+          // Convert grayscale to RGBA
+          for (let j = 0, k = 0; j < pixelData.length && k < imageData.data.length; j++, k += 4) {
+            const v = pixelData[j];
+            imageData.data[k] = v;
+            imageData.data[k + 1] = v;
+            imageData.data[k + 2] = v;
+            imageData.data[k + 3] = 255;
+          }
+          ctx.putImageData(imageData, 0, 0);
+          
+          const imgElement = new Image();
+          imgElement.src = canvas.toDataURL();
+          loadedImageElements.push(imgElement);
+        }
+      }
+    }
+
+    console.log('[SERRVICELOAD ] converted', loadedImageElements.length, 'images for ViewerCore');
+
+    // Update state with loaded images for ViewerCore
+    setState(prev => ({
+      ...prev,
+      loadedImages: loadedImageElements,
+      totalFrames: loadedImageElements.length,
+      currentFrame: 0
+    }));
+
     // Remove previous fallback canvas if present
     try {
       const existing = containerRef.current?.querySelector('#dicom-fallback-canvas') as HTMLElement | null;
@@ -1185,7 +1139,7 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
     // Try VTK render for 2D image first
     if (vtkSvc && viewportEl) {
       try {
-        console.log('[SERRVICELOAD ] Attempting VTK rendering path (2D/volume) using vtkEnhancedService');
+        console.log('[SERRVICELOAD ] Attempting VTK rendering path (2D/volume) using EnhancedVTKService');
 
         // If image has pixel buffer (2D single slice)
         const hasPixelBuffer = typeof firstImg.getPixelData === 'function' || firstImg.pixelData instanceof Uint8Array || firstImg.pixelBuffer instanceof ArrayBuffer;
@@ -1557,21 +1511,25 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
         clearInterval(performanceMonitorRef.current);
       }
     };
-  }, [initializeServices]);
+  }, []); // Remove initializeServices from dependencies to prevent infinite loop
 
   // Load study when prop changes
   useEffect(() => {
     if (study && state.isInitialized) {
       loadStudyWithMemoryOptimization(study);
     }
-  }, [study, state.isInitialized, loadStudyWithMemoryOptimization]);
+  }, [study?.studyInstanceUID, state.isInitialized]); // Use study ID instead of entire study object
 
-  // State change callback
-  useEffect(() => {
+  // State change callback - memoize to prevent infinite calls
+  const stateChangeCallback = useCallback(() => {
     if (onStateChange) {
       onStateChange(state);
     }
-  }, [state, onStateChange]);
+  }, [onStateChange, state.isLoading, state.error, state.loadingProgress, state.currentImageIndex]);
+
+  useEffect(() => {
+    stateChangeCallback();
+  }, [stateChangeCallback]);
 
   // Render loading state
   if (state.isLoading || !state.isInitialized) {
@@ -1644,17 +1602,18 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
 
   // Main viewer render
   return (
-    <ErrorBoundary>
-      <Box
-        ref={containerRef}
-        sx={{
-          width,
-          height,
-          display: 'flex',
-          flexDirection: 'column',
-          bgcolor: 'background.default',
-          position: 'relative',
-          overflow: 'hidden',
+    <ServiceManager config={serviceManagerConfig}>
+      <ErrorBoundary>
+        <Box
+          ref={containerRef}
+          sx={{
+            width,
+            height,
+            display: 'flex',
+            flexDirection: 'column',
+            bgcolor: 'background.default',
+            position: 'relative',
+            overflow: 'hidden',
           ...sx
         }}
         className={className}
@@ -1670,6 +1629,26 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
               enableAI={enableAI}
               aiAssistanceEnabled={state.aiAssistanceEnabled}
               onToggleAI={(enabled) => setState(prev => ({ ...prev, aiAssistanceEnabled: enabled }))}
+              totalFrames={state.totalFrames}
+              currentFrame={state.currentFrame}
+              onNavigateFrame={(direction) => {
+                let newFrame = state.currentFrame;
+                switch (direction) {
+                  case 'next':
+                    newFrame = Math.min(state.currentFrame + 1, state.totalFrames - 1);
+                    break;
+                  case 'previous':
+                    newFrame = Math.max(state.currentFrame - 1, 0);
+                    break;
+                  case 'first':
+                    newFrame = 0;
+                    break;
+                  case 'last':
+                    newFrame = state.totalFrames - 1;
+                    break;
+                }
+                setState(prev => ({ ...prev, currentFrame: newFrame }));
+              }}
             />
           </Suspense>
         )}
@@ -1713,7 +1692,7 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
                   totalFrames: state.totalFrames,
                   currentFrame: state.currentFrame,
                   imageData: [],
-                  loadedImages: [],
+                  loadedImages: state.loadedImages,
                   loadedBatches: new Set(),
                   batchSize: 10,
                   isLoadingBatch: false,
@@ -1816,7 +1795,7 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
             {/* Performance monitor */}
             {enablePerformanceMonitoring && (
               <Suspense fallback={null}>
-                <PerformanceMonitorComponent
+                <PerformanceMonitor
                   state={{
                     isLoading: state.isLoading,
                     error: state.error,
@@ -1925,7 +1904,24 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
                 gap: 1
               }}
             >
-              {/* Settings */}
+              {/* Diagnostics Button */}
+              <Tooltip title={state.diagnosticsPanelOpen ? "Close Diagnostics" : "Open Diagnostics"}>
+                <Fab
+                  size="small"
+                  color={state.diagnosticsPanelOpen ? "secondary" : "default"}
+                  onClick={() => setState(prev => ({ ...prev, diagnosticsPanelOpen: !prev.diagnosticsPanelOpen }))}
+                  sx={{ 
+                    bgcolor: state.diagnosticsPanelOpen ? 'secondary.main' : 'background.paper',
+                    '&:hover': {
+                      bgcolor: state.diagnosticsPanelOpen ? 'secondary.dark' : 'action.hover'
+                    }
+                  }}
+                >
+                  <BugReport />
+                </Fab>
+              </Tooltip>
+
+              {/* Settings Button */}
               <Tooltip title="Settings">
                 <Fab
                   size="small"
@@ -1975,50 +1971,51 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
                 <FormControl fullWidth>
                   <InputLabel>Quality Preset</InputLabel>
                   <Select
-                    value={state.qualityLevel}
-                    onChange={(e) => setState(prev => ({ ...prev, qualityLevel: e.target.value as any }))}
+                    value={qualityPreset}
+                    onChange={(e) => {
+                      // Handle quality preset change
+                      console.log('Quality preset changed:', e.target.value);
+                    }}
                   >
                     <MenuItem value="diagnostic">Diagnostic</MenuItem>
-                    <MenuItem value="high">High</MenuItem>
-                    <MenuItem value="medium">Medium</MenuItem>
-                    <MenuItem value="low">Low</MenuItem>
+                    <MenuItem value="preview">Preview</MenuItem>
+                    <MenuItem value="high">High Quality</MenuItem>
+                    <MenuItem value="ultra">Ultra Quality</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
+              
               <Grid item xs={12} md={6}>
                 <FormControl fullWidth>
                   <InputLabel>Rendering Mode</InputLabel>
                   <Select
-                    value={state.renderingMode}
-                    onChange={(e) => setState(prev => ({ ...prev, renderingMode: e.target.value as any }))}
+                    value={preferredRenderingMode}
+                    onChange={(e) => {
+                      // Handle rendering mode change
+                      console.log('Rendering mode changed:', e.target.value);
+                    }}
                   >
-                    {state.gpuCapabilities?.webgpu && <MenuItem value="webgpu">WebGPU</MenuItem>}
-                    {state.gpuCapabilities?.webgl2 && <MenuItem value="webgl2">WebGL 2.0</MenuItem>}
-                    {state.gpuCapabilities?.webgl && <MenuItem value="webgl">WebGL</MenuItem>}
+                    <MenuItem value="auto">Auto</MenuItem>
+                    <MenuItem value="webgpu">WebGPU</MenuItem>
+                    <MenuItem value="webgl2">WebGL 2</MenuItem>
+                    <MenuItem value="webgl">WebGL</MenuItem>
                     <MenuItem value="software">Software</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
+              
               <Grid item xs={12}>
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={state.aiAssistanceEnabled}
-                      onChange={(e) => setState(prev => ({ ...prev, aiAssistanceEnabled: e.target.checked }))}
+                      checked={enableAI}
+                      onChange={(e) => {
+                        // Handle AI toggle
+                        console.log('AI enabled:', e.target.checked);
+                      }}
                     />
                   }
-                  label="AI Assistance"
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={state.accessibilityMode}
-                      onChange={(e) => setState(prev => ({ ...prev, accessibilityMode: e.target.checked }))}
-                    />
-                  }
-                  label="Accessibility Mode"
+                  label="Enable AI Enhancement"
                 />
               </Grid>
             </Grid>
@@ -2030,44 +2027,40 @@ const loadStudyWithMemoryOptimization = useCallback(async (studyData: Study) => 
           </DialogActions>
         </Dialog>
 
-        {/* Notification system */}
+        {/* Diagnostic Panel */}
+        {state.diagnosticsPanelOpen && (
+          <Suspense fallback={<CircularProgress />}>
+            <DiagnosticPanel
+              open={state.diagnosticsPanelOpen}
+              onClose={() => setState(prev => ({ ...prev, diagnosticsPanelOpen: false }))}
+              diagnosticsEnabled={true}
+              onToggleDiagnostics={(enabled) => console.log('Diagnostics toggled:', enabled)}
+              gpuDiagnostics={state.gpuDiagnostics}
+              cornerstoneDiagnostics={state.cornerstoneDiagnostics}
+              windowLevelDiagnostics={state.windowLevelDiagnostics}
+              dataFlowDiagnostics={state.dataFlowDiagnostics}
+              diagnosticEvents={state.diagnosticEvents || []}
+              diagnosticHistory={state.diagnosticHistory || []}
+              onRunDiagnostics={() => console.log('Run diagnostics')}
+              onClearHistory={() => console.log('Clear history')}
+            />
+          </Suspense>
+        )}
+
+        {/* Notification Snackbar */}
         <Snackbar
           open={notification.open}
           autoHideDuration={6000}
           onClose={() => setNotification(prev => ({ ...prev, open: false }))}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        >
-          <Alert
-            onClose={() => setNotification(prev => ({ ...prev, open: false }))}
-            severity={notification.severity}
-            variant="filled"
-            action={notification.action}
-          >
-            {notification.message}
-          </Alert>
-        </Snackbar>
-
-        {/* Accessibility announcements */}
-        <Box
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          sx={{
-            position: 'absolute',
-            left: -10000,
-            width: 1,
-            height: 1,
-            overflow: 'hidden'
-          }}
-        >
-          {/* Screen reader announcements will be made here */}
-        </Box>
+          message={notification.message}
+          action={notification.action}
+        />
       </Box>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </ServiceManager>
   );
 });
 
 UnifiedDicomViewer.displayName = 'UnifiedDicomViewer';
 
 export default UnifiedDicomViewer;
-export type { UnifiedDicomViewerProps, UnifiedDicomViewerRef, GPUCapabilities, PerformanceMetrics };

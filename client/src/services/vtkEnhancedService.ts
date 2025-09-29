@@ -505,6 +505,67 @@ class EnhancedVTKService {
     return this.webGPUSupported && this.config.enableWebGPU === true;
   }
 
+  /**
+   * Render a 2D image in the viewport
+   */
+  async renderImageInViewport(container: HTMLElement, payload: any): Promise<void> {
+    if (!this.initialized || !this.renderer) {
+      throw new Error('Enhanced VTK Service not initialized. Call initialize() first.');
+    }
+
+    try {
+      console.log('🖼️ [EnhancedVTKService] Rendering 2D image in viewport');
+
+      // Create VTK image data from payload
+      const imageData = vtkImageData.newInstance();
+      const dimensions = [payload.columns || 512, payload.rows || 512, 1];
+      imageData.setDimensions(dimensions);
+      imageData.setSpacing([1, 1, 1]);
+      imageData.setOrigin([0, 0, 0]);
+
+      // Create scalar data array from pixel data
+      const dataArray = vtkDataArray.newInstance({
+        name: 'scalars',
+        values: payload.pixelData,
+        numberOfComponents: payload.samplesPerPixel || 1
+      });
+      imageData.getPointData().setScalars(dataArray);
+
+      // Create image slice for 2D rendering
+      const imageSlice = vtkImageSlice.newInstance();
+      const imageMapper = vtkImageMapper.newInstance();
+      imageMapper.setInputData(imageData);
+      imageSlice.setMapper(imageMapper);
+
+      // Set up image properties for windowing
+      const imageProperty = imageSlice.getProperty();
+      if (payload.windowWidth && payload.windowCenter) {
+        imageProperty.setColorWindow(payload.windowWidth);
+        imageProperty.setColorLevel(payload.windowCenter);
+      } else {
+        // Default windowing for better visibility
+        imageProperty.setColorWindow(2000);
+        imageProperty.setColorLevel(1000);
+      }
+
+      // Clear previous actors and add the new image slice
+      this.renderer.removeAllViewProps();
+      this.renderer.addActor(imageSlice);
+
+      // Reset camera to fit the image
+      this.renderer.resetCamera();
+      
+      // Render the scene
+      this.render();
+
+      console.log('✅ [EnhancedVTKService] 2D image rendered successfully');
+
+    } catch (error) {
+      console.error('❌ [EnhancedVTKService] Failed to render 2D image:', error);
+      throw error;
+    }
+  }
+
   getMemoryUsage(): number {
     if (this.memoryManager) {
       return this.memoryManager.getMemoryUsage() / (1024 * 1024); // Convert to MB
